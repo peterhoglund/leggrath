@@ -1,3 +1,6 @@
+
+import type { Timestamp } from "firebase/firestore"; // Added import
+
 export enum Player {
   NORTH = 'North', // Player 1
   SOUTH = 'South'  // Player 2
@@ -51,17 +54,16 @@ export enum GamePhase {
 export interface GameState {
   board: BoardState;
   currentPlayer: Player;
-  selectedPiece: PieceOnBoard | null; // Will be null for opponent when viewing
-  validMoves: Move[]; // Will be empty for opponent
+  selectedPiece: PieceOnBoard | null; 
+  validMoves: Move[]; 
   gamePhase: GamePhase;
   winner: Player | null;
   winReason: string | null;
   turnNumber: number;
   message: string;
-  // Multiplayer specific fields, could be part of a larger Firestore document
-  playerSouthName?: string;
-  playerNorthName?: string;
-  lastMoveTimestamp?: number; // For potential ordering or debugging
+  playerSouthName: string | null; 
+  playerNorthName: string | null; 
+  lastMoveTimestamp: Timestamp | null; // Changed from number | null
 }
 
 // Defines the overall state of the application UI
@@ -76,13 +78,13 @@ export type AppMode =
 export interface FirestoreGameDoc {
   gameId: string;
   gameState: GameState;
-  hostPlayerId: string; // Could be a unique session ID or Firebase User ID if auth is added
-  guestPlayerId?: string;
+  hostPlayerId: string; 
+  guestPlayerId: string | null; 
   hostPlayerName: string;
-  guestPlayerName?: string;
+  guestPlayerName: string | null; 
   status: 'waiting' | 'active' | 'finished' | 'aborted';
-  createdAt: number; // Timestamp
-  updatedAt: number; // Timestamp
+  createdAt: number; // Timestamp (kept as number for Date.now() compatibility)
+  updatedAt: Timestamp; // Changed from number
 }
 
 declare global {

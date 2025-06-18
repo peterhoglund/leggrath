@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Unsubscribe } from "firebase/firestore";
+import { Timestamp } from "firebase/firestore"; // Added import
 
 import { BoardState, Player, PieceOnBoard, GameState, GamePhase, Coordinate, PieceType, Move, AppMode, FirestoreGameDoc } from './types';
 import { 
@@ -107,9 +108,9 @@ const App: React.FC = () => {
       winReason: null,
       turnNumber: 1,
       message: `Turn 1: ${initialPlayer}'s move. Select a piece.`,
-      playerSouthName: "South", // Default for local
-      playerNorthName: "North", // Default for local
-      lastMoveTimestamp: null, // Explicitly null
+      playerSouthName: "South", 
+      playerNorthName: "North", 
+      lastMoveTimestamp: null, // Remains null, compatible with Timestamp | null
     };
   }
 
@@ -204,6 +205,7 @@ const App: React.FC = () => {
               winner: winner,
               winReason: `${winner} wins! Opponent left the game.`,
               message: `${winner} wins! Opponent left the game.`,
+              lastMoveTimestamp: Timestamp.now(), // Use Timestamp.now() here too if appropriate for this event
             };
             await updateGameStateInFirestore(currentGameId, finalGameState);
             await setGameStatus(currentGameId, 'finished');
@@ -250,6 +252,7 @@ const App: React.FC = () => {
     }
     
     const moverDisplayName = moverPlayer === Player.SOUTH ? (currentGameState.playerSouthName || Player.SOUTH) : (currentGameState.playerNorthName || Player.NORTH);
+    const currentTimestamp = Timestamp.now(); // Use Firestore Timestamp
 
     if (gameIsOver) {
         const finalMessage = `${moverDisplayName} (${moverPlayer}) ${localWinReason}`;
@@ -257,7 +260,7 @@ const App: React.FC = () => {
             ...currentGameState, board: boardAfterMove, gamePhase: GamePhase.GAME_OVER, winner: winner,
             winReason: finalMessage, message: finalMessage,
             selectedPiece: null, validMoves: [], 
-            lastMoveTimestamp: Date.now(), // Set timestamp on game over
+            lastMoveTimestamp: currentTimestamp, 
         };
     }
     
@@ -271,7 +274,7 @@ const App: React.FC = () => {
       selectedPiece: null, validMoves: [], 
       gamePhase: GamePhase.PLAYING, 
       message: nextMessage,
-      lastMoveTimestamp: Date.now(), // Set timestamp after each turn
+      lastMoveTimestamp: currentTimestamp, 
     };
   }, []); 
 
