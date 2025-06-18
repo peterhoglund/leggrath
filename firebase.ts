@@ -1,16 +1,24 @@
 
-import firebase from 'firebase/compat/app';
-import 'firebase/compat/firestore';
+import { initializeApp } from "firebase/app";
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  updateDoc, 
+  onSnapshot,
+  Timestamp // For consistency if server timestamps are ever used
+} from "firebase/firestore";
+import type { Unsubscribe } from "firebase/firestore"; // Ensure Unsubscribe type is available
 
-import type { GameState, Player, FirestoreGameDoc } from './types';
+import { GameState, Player, FirestoreGameDoc, GamePhase } from './types'; // Changed type-only import for Player, added GamePhase
 import { getInitialBoard } from './utils/gameLogic';
 import { INITIAL_PIECES_SETUP } from './constants';
 
-// Initialize Firebase using compat
-if (!firebase.apps.length) {
-  firebase.initializeApp(window.firebaseConfig);
-}
-const db = firebase.firestore();
+// Initialize Firebase using modern v9+ modular SDK
+const app = initializeApp(window.firebaseConfig);
+const db = getFirestore(app);
 
 export const createGameInFirestore = async (
   gameId: string,
@@ -25,7 +33,7 @@ export const createGameInFirestore = async (
     currentPlayer: initialPlayer,
     selectedPiece: null,
     validMoves: [],
-    gamePhase: 'Playing', // Keep as string literal if GamePhase enum not imported
+    gamePhase: GamePhase.PLAYING, // Changed from "Playing" to GamePhase.PLAYING
     winner: null,
     winReason: null,
     turnNumber: 1,
@@ -33,22 +41,19 @@ export const createGameInFirestore = async (
     playerSouthName: hostPlayerName,
   };
 
-  const gameDocRef = db.collection("games").doc(gameId);
+  const gameDocRef = doc(db, "games", gameId);
   const newGameData: FirestoreGameDoc = {
     gameId,
     gameState: initialGameState,
     hostPlayerId,
     hostPlayerName,
     status: 'waiting',
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: Date.now(), // Using client-side timestamp for simplicity
+    updatedAt: Date.now(), // Using client-side timestamp
   };
 
-  await gameDocRef.set(newGameData);
-  // Firestore compat's set doesn't return the written data directly like v9 setDoc.
-  // The newGameData here has client-side timestamps. If server timestamps were used and needed back, a get() would follow.
-  // For current structure, returning newGameData is fine.
-  return newGameData;
+  await setDoc(gameDocRef, newGameData);
+  return newGameData; // setDoc doesn't return the document, but we have newGameData
 };
 
 export const joinGameInFirestore = async (
@@ -56,10 +61,10 @@ export const joinGameInFirestore = async (
   guestPlayerId: string,
   guestPlayerName: string
 ): Promise<FirestoreGameDoc | null> => {
-  const gameDocRef = db.collection("games").doc(gameId);
-  const gameSnap = await gameDocRef.get();
+  const gameDocRef = doc(db, "games", gameId);
+  const gameSnap = await getDoc(gameDocRef);
 
-  if (gameSnap.exists) {
+  if (gameSnap.exists()) {
     const gameData = gameSnap.data() as FirestoreGameDoc;
     if (gameData.status === 'waiting' && !gameData.guestPlayerId) {
       const updatedGameState = {
@@ -67,23 +72,20 @@ export const joinGameInFirestore = async (
         playerNorthName: guestPlayerName,
         message: `Turn ${gameData.gameState.turnNumber}: ${gameData.gameState.playerSouthName} (${Player.SOUTH})'s move. Select a piece.`,
       };
-      await gameDocRef.update({
+      const updatePayload = {
         guestPlayerId: guestPlayerId,
         guestPlayerName: guestPlayerName,
-        status: 'active',
+        status: 'active' as const,
         gameState: updatedGameState,
         updatedAt: Date.now(),
-      });
-      // Construct the returned object to match FirestoreGameDoc structure
-      const updatedDocData = { 
-        ...gameData, 
-        guestPlayerId, 
-        guestPlayerName, 
-        status: 'active' as const, // Ensure status type is literal
-        gameState: updatedGameState,
-        updatedAt: Date.now() // Reflect update time, though gameData.updatedAt would be stale
       };
-      return updatedDocData;
+      await updateDoc(gameDocRef, updatePayload);
+      
+      // Construct the returned object to match FirestoreGameDoc structure
+      return { 
+        ...gameData, 
+        ...updatePayload 
+      };
     } else {
       console.error("Game is not available to join or already has a guest.");
       return null;
@@ -94,12 +96,10 @@ export const joinGameInFirestore = async (
   }
 };
 
-// The Unsubscribe type in App.tsx (imported from 'firebase/firestore') is typically () => void,
-// which is compatible with the return type of compat onSnapshot.
-export const getGameStream = (gameId: string, callback: (gameData: FirestoreGameDoc | null) => void): (() => void) => {
-  const gameDocRef = db.collection("games").doc(gameId);
-  return gameDocRef.onSnapshot((docSnap) => {
-    if (docSnap.exists) {
+export const getGameStream = (gameId: string, callback: (gameData: FirestoreGameDoc | null) => void): Unsubscribe => {
+  const gameDocRef = doc(db, "games", gameId);
+  return onSnapshot(gameDocRef, (docSnap) => {
+    if (docSnap.exists()) {
       callback(docSnap.data() as FirestoreGameDoc);
     } else {
       callback(null);
@@ -111,19 +111,22 @@ export const getGameStream = (gameId: string, callback: (gameData: FirestoreGame
 };
 
 export const updateGameStateInFirestore = async (gameId: string, newGameState: GameState): Promise<void> => {
-  const gameDocRef = db.collection("games").doc(gameId);
-  newGameState.lastMoveTimestamp = Date.now();
-  await gameDocRef.update({
-    gameState: newGameState,
+  const gameDocRef = doc(db, "games", gameId);
+  const updatePayload = {
+    gameState: {
+        ...newGameState,
+        lastMoveTimestamp: Date.now() // Add timestamp to newGameState before sending
+    },
     updatedAt: Date.now(),
-  });
+  };
+  await updateDoc(gameDocRef, updatePayload);
 };
 
 export const generateUniqueId = (): string => {
-  return Math.random().toString(36).substr(2, 9);
+  return Math.random().toString(36).substring(2, 11); // Adjusted substring for typical ID length
 };
 
 export const setGameStatus = async (gameId: string, status: FirestoreGameDoc['status']): Promise<void> => {
-  const gameDocRef = db.collection("games").doc(gameId);
-  await gameDocRef.update({ status, updatedAt: Date.now() });
+  const gameDocRef = doc(db, "games", gameId);
+  await updateDoc(gameDocRef, { status, updatedAt: Date.now() });
 };
