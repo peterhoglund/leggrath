@@ -109,6 +109,7 @@ const App: React.FC = () => {
       message: `Turn 1: ${initialPlayer}'s move. Select a piece.`,
       playerSouthName: "South", // Default for local
       playerNorthName: "North", // Default for local
+      lastMoveTimestamp: null, // Explicitly null
     };
   }
 
@@ -256,6 +257,7 @@ const App: React.FC = () => {
             ...currentGameState, board: boardAfterMove, gamePhase: GamePhase.GAME_OVER, winner: winner,
             winReason: finalMessage, message: finalMessage,
             selectedPiece: null, validMoves: [], 
+            lastMoveTimestamp: Date.now(), // Set timestamp on game over
         };
     }
     
@@ -268,7 +270,8 @@ const App: React.FC = () => {
       ...currentGameState, board: boardAfterMove, currentPlayer: nextPlayer, turnNumber: nextTurnNumber,
       selectedPiece: null, validMoves: [], 
       gamePhase: GamePhase.PLAYING, 
-      message: nextMessage
+      message: nextMessage,
+      lastMoveTimestamp: Date.now(), // Set timestamp after each turn
     };
   }, []); 
 

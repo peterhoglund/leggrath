@@ -1,5 +1,5 @@
 
-import { initializeApp } from "firebase/app";
+import * as firebaseAppModule from "firebase/app"; // Changed import
 import { 
   getFirestore, 
   collection, 
@@ -17,7 +17,7 @@ import { getInitialBoard } from './utils/gameLogic';
 import { INITIAL_PIECES_SETUP } from './constants';
 
 // Initialize Firebase using modern v9+ modular SDK
-const app = initializeApp(window.firebaseConfig);
+const app = firebaseAppModule.initializeApp(window.firebaseConfig); // Updated call
 const db = getFirestore(app);
 
 export const createGameInFirestore = async (
@@ -33,12 +33,14 @@ export const createGameInFirestore = async (
     currentPlayer: initialPlayer,
     selectedPiece: null,
     validMoves: [],
-    gamePhase: GamePhase.PLAYING, // Changed from "Playing" to GamePhase.PLAYING
+    gamePhase: GamePhase.PLAYING, 
     winner: null,
     winReason: null,
     turnNumber: 1,
     message: `Turn 1: ${hostPlayerName} (${initialPlayer})'s move. Waiting for opponent...`,
     playerSouthName: hostPlayerName,
+    playerNorthName: null, // Explicitly null
+    lastMoveTimestamp: null, // Explicitly null
   };
 
   const gameDocRef = doc(db, "games", gameId);
@@ -47,13 +49,15 @@ export const createGameInFirestore = async (
     gameState: initialGameState,
     hostPlayerId,
     hostPlayerName,
+    guestPlayerId: null, // Explicitly null
+    guestPlayerName: null, // Explicitly null
     status: 'waiting',
-    createdAt: Date.now(), // Using client-side timestamp for simplicity
-    updatedAt: Date.now(), // Using client-side timestamp
+    createdAt: Date.now(), 
+    updatedAt: Date.now(), 
   };
 
   await setDoc(gameDocRef, newGameData);
-  return newGameData; // setDoc doesn't return the document, but we have newGameData
+  return newGameData; 
 };
 
 export const joinGameInFirestore = async (
@@ -81,7 +85,6 @@ export const joinGameInFirestore = async (
       };
       await updateDoc(gameDocRef, updatePayload);
       
-      // Construct the returned object to match FirestoreGameDoc structure
       return { 
         ...gameData, 
         ...updatePayload 
@@ -112,18 +115,29 @@ export const getGameStream = (gameId: string, callback: (gameData: FirestoreGame
 
 export const updateGameStateInFirestore = async (gameId: string, newGameState: GameState): Promise<void> => {
   const gameDocRef = doc(db, "games", gameId);
+  // Ensure newGameState doesn't have undefined values before sending to Firestore
+  // For now, assuming newGameState is constructed correctly in App.tsx to use nulls
   const updatePayload = {
     gameState: {
         ...newGameState,
-        lastMoveTimestamp: Date.now() // Add timestamp to newGameState before sending
+        lastMoveTimestamp: newGameState.lastMoveTimestamp === undefined ? Date.now() : newGameState.lastMoveTimestamp // Prefer existing, else set
     },
     updatedAt: Date.now(),
   };
+   // If newGameState.lastMoveTimestamp itself can be undefined, ensure it becomes null or a value.
+   // The current logic in App.tsx for endTurn likely doesn't set lastMoveTimestamp itself.
+   // The spread will carry over previous value or undefined if not set.
+   // Setting it here directly is safer.
+  if (updatePayload.gameState.lastMoveTimestamp === undefined) {
+    updatePayload.gameState.lastMoveTimestamp = Date.now();
+  }
+
+
   await updateDoc(gameDocRef, updatePayload);
 };
 
 export const generateUniqueId = (): string => {
-  return Math.random().toString(36).substring(2, 11); // Adjusted substring for typical ID length
+  return Math.random().toString(36).substring(2, 11); 
 };
 
 export const setGameStatus = async (gameId: string, status: FirestoreGameDoc['status']): Promise<void> => {
