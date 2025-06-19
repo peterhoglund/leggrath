@@ -444,13 +444,13 @@ const App: React.FC = () => {
         <div className="space-y-6 w-full max-w-sm">
           <button
             onClick={handleSwitchToLocalPlay}
-            className="w-full py-3.5 text-xl"
+            className="w-full py-3.5 text-xl bg-[#5C5346] hover:bg-[#6E6255]"
           >
             Play Local Game
           </button>
           <button
             onClick={handleGoToMultiplayerSetup}
-            className="w-full py-3.5 text-xl"
+            className="w-full py-3.5 text-xl bg-[#5C5346] hover:bg-[#6E6255]"
           >
             Play Online Multiplayer
           </button>
@@ -548,11 +548,20 @@ const App: React.FC = () => {
         </section>
         
         <div className="flex flex-col items-center w-full mt-2 space-y-3">
-            <div className="flex justify-center w-full">
+            <div className="flex flex-col sm:flex-row justify-center items-center w-full gap-3">
               <ResetControls 
                 onReset={appMode === 'PLAYING_ONLINE' ? handleLeaveGame : resetLocalGame} 
                 buttonText={appMode === 'PLAYING_ONLINE' ? 'Leave Game' : 'Reset Game'}
               />
+              {(appMode === 'PLAYING_ONLINE' || appMode === 'LOCAL_PLAY') && (
+                <button
+                  onClick={appMode === 'PLAYING_ONLINE' ? handleLeaveGame : handleBackToMainMenu}
+                  className="px-4 sm:px-5 py-2 bg-[#4A4238] hover:bg-[#5C5346] text-[#E0D8CC] font-semibold rounded-lg shadow-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-[#8C7062] focus:ring-opacity-75 font-medieval whitespace-nowrap text-sm"
+                  aria-label="Back to Main Menu"
+                >
+                  Main Menu
+                </button>
+              )}
             </div>
 
             <div className="flex justify-center w-full">
@@ -565,7 +574,7 @@ const App: React.FC = () => {
                 <span>Checkered board</span>
                 <div className={`relative inline-block w-10 h-[22px] rounded-full transition-colors duration-200 ease-in-out ${isCheckerboardPattern ? 'bg-[#8C7062]' : 'bg-[#4A4238]'}`}>
                   <span
-                    className={`absolute top-[1px] left-[1px] inline-block w-5 h-5 bg-white rounded-full shadow transform transition-transform duration-200 ease-in-out ${isCheckerboardPattern ? 'translate-x-[18px]' : 'translate-x-0'}`}
+                    className={`absolute top-[1px] left-[1px] inline-block w-5 h-5 bg-white rounded-full transform transition-transform duration-200 ease-in-out ${isCheckerboardPattern ? 'translate-x-[18px]' : 'translate-x-0'}`}
                   />
                 </div>
               </button>
@@ -581,7 +590,7 @@ const App: React.FC = () => {
                 <span>Portal Mode</span>
                 <div className={`relative inline-block w-10 h-[22px] rounded-full transition-colors duration-200 ease-in-out ${isPortalModeActive ? 'bg-[#8C7062]' : 'bg-[#4A4238]'}`}>
                   <span
-                    className={`absolute top-[1px] left-[1px] inline-block w-5 h-5 bg-white rounded-full shadow transform transition-transform duration-200 ease-in-out ${isPortalModeActive ? 'translate-x-[18px]' : 'translate-x-0'}`}
+                    className={`absolute top-[1px] left-[1px] inline-block w-5 h-5 bg-white rounded-full transform transition-transform duration-200 ease-in-out ${isPortalModeActive ? 'translate-x-[18px]' : 'translate-x-0'}`}
                   />
                 </div>
               </button>

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 
 interface MultiplayerSetupProps {
@@ -58,7 +59,7 @@ const MultiplayerSetup: React.FC<MultiplayerSetupProps> = ({
             value={playerName}
             onChange={(e) => setPlayerName(e.target.value)}
             placeholder="Enter your name"
-            className="w-full"
+            className="w-full placeholder:text-[#A08C7A]"
             maxLength={25}
             disabled={loading}
             aria-required="true"
@@ -75,7 +76,7 @@ const MultiplayerSetup: React.FC<MultiplayerSetupProps> = ({
             value={gameRoomName}
             onChange={(e) => setGameRoomName(e.target.value)}
             placeholder="Enter a room name"
-            className="w-full"
+            className="w-full placeholder:text-[#A08C7A]"
             maxLength={25}
             disabled={loading}
             aria-required="true"
@@ -87,14 +88,14 @@ const MultiplayerSetup: React.FC<MultiplayerSetupProps> = ({
           <button
             onClick={handleCreate}
             disabled={!playerName.trim() || gameRoomName.trim().length < 3 || loading}
-            className="w-full py-2.5 text-lg"
+            className="w-full py-2.5 text-lg bg-[#5C5346] hover:bg-[#6E6255]"
           >
             {loading ? 'Creating...' : 'Create Game'}
           </button>
           <button
             onClick={handleJoin}
             disabled={!playerName.trim() || gameRoomName.trim().length < 3 || loading}
-            className="w-full py-2.5 text-lg"
+            className="w-full py-2.5 text-lg bg-[#5C5346] hover:bg-[#6E6255]"
           >
             {loading ? 'Joining...' : 'Join Game'}
           </button>
