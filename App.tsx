@@ -160,6 +160,7 @@ const App: React.FC = () => {
       setFirestoreGameDoc(gameDoc);
       setGameState(gameDoc.gameState);
       setAppMode('WAITING_FOR_OPPONENT');
+      setLoading(false); // Ensure loading is false when waiting screen appears
     } catch (error) {
       console.error("Error creating game:", error);
       setErrorMessage("Failed to create game. The room name might be taken or invalid, or a data error occurred. Please try again.");
@@ -182,6 +183,7 @@ const App: React.FC = () => {
         setFirestoreGameDoc(gameDoc);
         setGameState(gameDoc.gameState); 
         setAppMode('PLAYING_ONLINE');
+        // setLoading(false) will be handled by the PLAYING_ONLINE useEffect listener
       } else {
         setErrorMessage("Could not join game. Check Game Room Name or game may be full/unavailable.");
         setGameId(null); // Clear gameId if join failed
