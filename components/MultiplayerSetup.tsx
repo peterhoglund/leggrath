@@ -21,16 +21,22 @@ const MultiplayerSetup: React.FC<MultiplayerSetupProps> = ({
 
   const handleCreate = () => {
     if (playerName.trim() && gameRoomName.trim()) {
+      // Room name is already uppercase and alphanumeric due to input handling
       onCreateGame(playerName.trim(), gameRoomName.trim());
     }
   };
 
   const handleJoin = () => {
     if (playerName.trim() && gameRoomName.trim()) {
-      // Game Room Name (used as Game ID) is typically case-insensitive or normalized (e.g., uppercase)
-      // This normalization should happen in App.tsx before calling Firebase.
+      // Room name is already uppercase and alphanumeric due to input handling
       onJoinGame(playerName.trim(), gameRoomName.trim());
     }
+  };
+
+  const handleGameRoomNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Convert to uppercase and remove non-alphanumerical characters
+    const processedValue = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    setGameRoomName(processedValue);
   };
 
   return (
@@ -40,7 +46,7 @@ const MultiplayerSetup: React.FC<MultiplayerSetupProps> = ({
         <p className="text-2xl font-runic text-[#C0B6A8] mt-2 title">ᛚᚴᚴᚱᛅᚦ</p>
       </header>
       
-      <h2 className="text-3xl font-medieval text-[#E0D8CC] mb-6">Multiplayer Game</h2>
+      <h2 className="text-3xl font-medieval text-[#E0D8CC] mb-6">Online Multiplayer</h2>
 
       {errorMessage && (
         <div className="mb-4 p-3 w-full max-w-md text-center bg-red-700 border border-red-900 rounded shadow text-white font-semibold">
@@ -50,8 +56,8 @@ const MultiplayerSetup: React.FC<MultiplayerSetupProps> = ({
 
       <div className="w-full max-w-md p-6 bg-[#3A3633] rounded-lg shadow-xl space-y-6">
         <div>
-          <label htmlFor="playerName" className="block text-sm font-medium text-[#C0B6A8] mb-1 font-medieval">
-            Your Name
+          <label htmlFor="playerName" className="block text-s font-medium text-[#C0B6A8] mb-1 font-medieval input-title">
+            your name
           </label>
           <input
             type="text"
@@ -59,7 +65,7 @@ const MultiplayerSetup: React.FC<MultiplayerSetupProps> = ({
             value={playerName}
             onChange={(e) => setPlayerName(e.target.value)}
             placeholder="Enter your name"
-            className="w-full placeholder:text-[#A08C7A]"
+            className="w-full text-lg placeholder:text-[#A08C7A]"
             maxLength={25}
             disabled={loading}
             aria-required="true"
@@ -67,21 +73,21 @@ const MultiplayerSetup: React.FC<MultiplayerSetupProps> = ({
         </div>
 
         <div>
-          <label htmlFor="gameRoomName" className="block text-sm font-medium text-[#C0B6A8] mb-1 font-medieval">
-            Game Room Name
+          <label htmlFor="gameRoomName" className="block text-s font-medium text-[#C0B6A8] mb-1 font-medieval input-title">
+            game room name
           </label>
           <input
             type="text"
             id="gameRoomName"
             value={gameRoomName}
-            onChange={(e) => setGameRoomName(e.target.value)}
-            placeholder="Enter a room name"
-            className="w-full placeholder:text-[#A08C7A]"
+            onChange={handleGameRoomNameChange}
+            placeholder="Enter a Room Name"
+            className="w-full text-lg placeholder:text-[#A08C7A]"
             maxLength={25}
             disabled={loading}
             aria-required="true"
           />
-           <p className="text-xs text-[#a09488] mt-1">Min 3 characters. Alphanumeric. Will be uppercased.</p>
+           <p className="text-xs text-[#a09488] mt-2">Min 3 alphanumerical characters (A-Z, 0-9).</p>
         </div>
         
         <div className="flex flex-col sm:flex-row sm:space-x-4 space-y-3 sm:space-y-0">

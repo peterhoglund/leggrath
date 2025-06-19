@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react'; // Added useRef
 import type { Unsubscribe } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore"; // Added import
 
@@ -37,6 +37,7 @@ const App: React.FC = () => {
   const [showRules, setShowRules] = useState(false);
   const [isCheckerboardPattern, setIsCheckerboardPattern] = useState(false);
   const [isPortalModeActive, setIsPortalModeActive] = useState(true);
+  const [showDebugFeatures, setShowDebugFeatures] = useState<boolean>(false); // Control debug button visibility
 
   // Multiplayer specific state
   const [playerName, setPlayerName] = useState<string>('');
@@ -46,6 +47,9 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sessionId] = useState<string>(generateUniqueId());
+  const [copyNotification, setCopyNotification] = useState<{ text: string; visible: boolean }>({ text: '', visible: false });
+  const copyRoomNameButtonRef = useRef<HTMLButtonElement>(null); // Ref for the copy button
+
 
   useEffect(() => {
     let unsubscribe: Unsubscribe | null = null;
@@ -69,13 +73,20 @@ const App: React.FC = () => {
               }));
           }
         } else {
-          setErrorMessage("Game not found or an error occurred.");
-          handleLeaveGame(); 
+          // Avoid automatically leaving if it's a debug session
+          if (gameId !== "DEBUGROOM") {
+            setErrorMessage("Game not found or an error occurred.");
+            handleLeaveGame();
+          }
         }
         setLoading(false);
       });
     } else if (appMode === 'WAITING_FOR_OPPONENT' && gameId) {
        unsubscribe = getGameStream(gameId, (gameData) => {
+        if (gameId === "DEBUGROOM") { // For debug mode, don't interact with Firestore
+            setLoading(false);
+            return; 
+        }
         if (gameData) {
           setFirestoreGameDoc(gameData);
           if (gameData.status === 'active' && gameData.guestPlayerId) {
@@ -133,6 +144,7 @@ const App: React.FC = () => {
     resetLocalGame(); 
     setErrorMessage(null);
     setLoading(false);
+    setCopyNotification({ text: '', visible: false }); // Clear copy message
   }
 
   const handleCreateGame = async (pName: string, roomName: string) => {
@@ -194,7 +206,7 @@ const App: React.FC = () => {
     const currentAppMode = appMode; 
     const currentGameId = gameId;   
 
-    if (currentGameId && (currentAppMode === 'PLAYING_ONLINE' || currentAppMode === 'WAITING_FOR_OPPONENT')) {
+    if (currentGameId && currentGameId !== "DEBUGROOM" && (currentAppMode === 'PLAYING_ONLINE' || currentAppMode === 'WAITING_FOR_OPPONENT')) {
       const currentDoc = firestoreGameDoc;
       if (currentDoc) {
          if (currentDoc.status === 'active') {
@@ -205,7 +217,7 @@ const App: React.FC = () => {
               winner: winner,
               winReason: `${winner} wins! Opponent left the game.`,
               message: `${winner} wins! Opponent left the game.`,
-              lastMoveTimestamp: Timestamp.now(), // Use Timestamp.now() here too if appropriate for this event
+              lastMoveTimestamp: Timestamp.now(), 
             };
             await updateGameStateInFirestore(currentGameId, finalGameState);
             await setGameStatus(currentGameId, 'finished');
@@ -216,6 +228,48 @@ const App: React.FC = () => {
     }
     handleBackToMainMenu();
   };
+
+  const handleDebugGoToWaitingScreen = () => {
+    setPlayerName("Debugger");
+    setGameId("DEBUGROOM"); 
+    setLocalPlayerRole(Player.SOUTH); 
+    setFirestoreGameDoc(null); // No real game doc for debug
+    setGameState(prev => ({ // Set a plausible game state for waiting screen
+        ...getInitialLocalGameState(),
+        playerSouthName: "Debugger",
+        message: "Waiting for opponent... (Debug Mode)"
+    }));
+    setErrorMessage(null);
+    setLoading(false);
+    setCopyNotification({ text: '', visible: false }); // Reset copy message
+    setAppMode('WAITING_FOR_OPPONENT');
+  };
+
+  const handleCopyRoomName = useCallback(async (currentRoomId: string | null) => {
+    if (!currentRoomId) return;
+
+    if (!navigator.clipboard) {
+      setCopyNotification({ text: 'Clipboard not available.', visible: true });
+      setTimeout(() => {
+        setCopyNotification(prev => ({ ...prev, visible: false }));
+        copyRoomNameButtonRef.current?.blur(); // Blur after notification
+      }, 2500);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(currentRoomId);
+      setCopyNotification({ text: 'Room name copied!', visible: true });
+    } catch (err) {
+      console.error('Failed to copy room name:', err);
+      setCopyNotification({ text: 'Failed to copy.', visible: true });
+    } finally {
+      setTimeout(() => {
+        setCopyNotification(prev => ({ ...prev, visible: false }));
+        copyRoomNameButtonRef.current?.blur(); // Blur after notification
+      }, 2000); 
+    }
+  }, []);
   
   const endTurn = useCallback((boardAfterMove: BoardState, moverPlayer: Player, pieceThatMoved: PieceOnBoard | null, currentGameState: GameState): GameState => {
     const opponent = moverPlayer === Player.NORTH ? Player.SOUTH : Player.NORTH;
@@ -313,7 +367,7 @@ const App: React.FC = () => {
     const newGameStateAfterMoveOnly = { ...gameState, board: newBoard, message: moveMessage || gameState.message };
     const newGameStateAfterTurnEnd = endTurn(newBoard, finalPieceState.player, finalPieceState, newGameStateAfterMoveOnly);
 
-    if (appMode === 'PLAYING_ONLINE' && gameId) {
+    if (appMode === 'PLAYING_ONLINE' && gameId && gameId !== "DEBUGROOM") {
       try {
         setLoading(true);
         await updateGameStateInFirestore(gameId, newGameStateAfterTurnEnd);
@@ -454,6 +508,15 @@ const App: React.FC = () => {
           >
             Play Online Multiplayer
           </button>
+          {showDebugFeatures && (
+            <button
+              onClick={handleDebugGoToWaitingScreen}
+              className="w-full py-2.5 text-md bg-[#4A3838] hover:bg-[#5A4848]" // Slightly different style for debug
+              title="Debug: Go to Waiting for Opponent Screen"
+            >
+              Debug: View Waiting Screen
+            </button>
+          )}
         </div>
       </div>
     );
@@ -471,14 +534,51 @@ const App: React.FC = () => {
   
   if (appMode === 'WAITING_FOR_OPPONENT') {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4 text-center">
-        <h1 className="text-4xl font-medieval mb-4">Waiting for Opponent...</h1>
-        <p className="text-xl font-medieval mb-2">Game Room: <strong className="font-runic text-2xl px-2 py-1 bg-[#4A4238] rounded">{gameId}</strong></p>
-        <p className="text-lg text-[#C0B6A8]">Share this Room Name with your opponent to join.</p>
-        {loading && <p className="mt-4 text-lg">Loading...</p>}
-        {errorMessage && <p className="mt-4 text-red-400">{errorMessage}</p>}
-         <button onClick={handleLeaveGame} className="mt-8 px-6 py-2.5 text-lg">
-           Cancel Game
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 text-center text-[#E0D8CC]">
+        <h1 className="text-4xl font-medieval mb-8">Waiting for Opponent</h1>
+        
+        <p className="text-lg text-[#C0B6A8] mb-4">Share this Room Name with your opponent.</p>
+        
+        <div className="relative text-center mb-8">
+            <button
+                ref={copyRoomNameButtonRef} // Attach ref here
+                onClick={() => handleCopyRoomName(gameId)}
+                className="bg-[#3C3731] px-8 py-2 rounded-lg shadow-md hover:bg-[#4a433d] transition-colors cursor-pointer group focus:outline-none focus:ring-2 focus:ring-[#8C7062] focus:ring-opacity-75"
+                title="Click to copy room name"
+                aria-label={`Copy room name ${gameId || 'Loading...'} to clipboard. Click to copy.`}
+                disabled={!gameId || loading}
+            >
+                <strong className="font-['Almendra'] text-[30px] text-[#E0D8CC] tracking-wider group-hover:text-white">
+                {gameId || 'Loading...'}
+                </strong>
+            </button>
+            <div
+                className={`absolute left-1/2 transform -translate-x-1/2 mt-2 px-3 py-1.5 bg-[#4A4238] text-[#E0D8CC] text-sm rounded-md shadow-lg transition-all duration-300 ease-in-out ${copyNotification.visible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'}`}
+                style={{ minWidth: '150px', top: 'calc(100% + 0.5rem)' }} 
+                role="status"
+                aria-live="polite"
+            >
+                {copyNotification.text}
+            </div>
+        </div>
+
+        <div className="flex justify-center items-center my-12" aria-label="Loading indicator">
+          <span className="dot dot-1" aria-hidden="true"></span>
+          <span className="dot dot-2" aria-hidden="true"></span>
+          <span className="dot dot-3" aria-hidden="true"></span>
+        </div>
+        
+        {errorMessage && (
+          <p className="text-red-400 text-lg mb-8">{errorMessage}</p>
+        )}
+
+         <button 
+            onClick={handleLeaveGame} 
+            className="px-8 py-3 text-lg bg-[#4A3838] hover:bg-[#5A4848] text-[#E0D8CC] my-6 rounded-lg shadow-md transition-colors duration-150"
+            style={{ fontFamily: "'Almendra', serif" }} // Use normal Almendra font
+            disabled={loading}
+          >
+           {loading ? 'Cancelling...' : 'Cancel Game'}
         </button>
       </div>
     );
@@ -515,9 +615,9 @@ const App: React.FC = () => {
 
       <div 
         aria-live="polite" 
-        className="mb-4 p-3 w-full max-w-md text-center bg-[#4A4238] border border-[#5C5346] rounded shadow text-[#E0D8CC] font-semibold text-lg"
+        className="mb-4 p-3 w-full max-w-md text-center bg-[#3C3832] rounded shadow text-[#E0D8CC] font-semibold text-lg"
       >
-        {loading && appMode === 'PLAYING_ONLINE' && <span className="italic mr-2">(Syncing...)</span>}
+        {loading && appMode === 'PLAYING_ONLINE' && gameId !== "DEBUGROOM" && <span className="italic mr-2">(Syncing...)</span>}
         {renderMessage()}
       </div>
       
@@ -567,7 +667,7 @@ const App: React.FC = () => {
             <div className="flex justify-center w-full">
               <button
                 onClick={toggleCheckerboardPattern}
-                className="flex justify-between items-center px-4 sm:px-5 py-2.5 text-[#E0D8CC] font-semibold transition-colors duration-150 font-medieval w-full max-w-xs text-sm sm:text-base focus:outline-none"
+                className="flex justify-between items-center px-4 sm:px-5 py-2.5 text-[#E0D8CC] font-semibold transition-colors duration-150 font-medieval w-full max-w-xs text-sm sm:text-base focus:outline-none shadow-none"
                 aria-pressed={isCheckerboardPattern}
                 title={isCheckerboardPattern ? "Switch to plain board" : "Switch to checkered board"}
               >
@@ -583,7 +683,7 @@ const App: React.FC = () => {
             <div className="flex justify-center w-full">
               <button
                 onClick={togglePortalMode}
-                className="flex justify-between items-center px-4 sm:px-5 py-2.5 text-[#E0D8CC] font-semibold transition-colors duration-150 font-medieval w-full max-w-xs text-sm sm:text-base focus:outline-none"
+                className="flex justify-between items-center px-4 sm:px-5 py-2.5 text-[#E0D8CC] font-semibold transition-colors duration-150 font-medieval w-full max-w-xs text-sm sm:text-base focus:outline-none shadow-none"
                 aria-pressed={isPortalModeActive}
                 title={isPortalModeActive ? "Deactivate Portals" : "Activate Portals"}
               >
@@ -599,7 +699,7 @@ const App: React.FC = () => {
             <div className="flex flex-col items-center w-full">
                 <button
                     onClick={toggleRules}
-                    className="flex justify-between items-center px-4 sm:px-5 py-2.5 text-[#E0D8CC] font-semibold transition-colors duration-150 font-medieval w-full max-w-xs text-sm sm:text-base focus:outline-none"
+                    className="flex justify-between items-center px-4 sm:px-5 py-2.5 text-[#E0D8CC] font-semibold transition-colors duration-150 font-medieval w-full max-w-xs text-sm sm:text-base focus:outline-none shadow-none"
                     aria-expanded={showRules}
                     aria-controls="rules-guide-content"
                 >
