@@ -66,8 +66,8 @@ export interface GameState {
   playerNorthName: string | null; 
   lastMoveTimestamp: Timestamp | null; // Changed from number | null
   awaitingPromotionChoice: { pieceId: string; at: Coordinate } | null; // For Raven promotion
-  capturedBySouth: Piece[]; // Pieces captured by South player
-  capturedByNorth: Piece[]; // Pieces captured by North player
+  southsLostPieces: Piece[]; // South's own pieces captured by North
+  northsLostPieces: Piece[]; // North's own pieces captured by South
   awaitingReinforcementPlacement: { pieceToPlace: Piece; originalPlayer: Player } | null; // For placing a captured piece
   // Dynamic board properties, initialized based on mode
   boardRows: number;
@@ -87,7 +87,7 @@ export type AppMode =
 // Structure for the game document in Firestore
 export interface FirestoreGameDoc {
   gameId: string;
-  gameState: GameState; // This now includes isSecureThroneRequired
+  gameState: GameState; // This now includes isSecureThroneRequired and new lost piece arrays
   hostPlayerId: string; 
   guestPlayerId: string | null; 
   hostPlayerName: string;

@@ -18,6 +18,7 @@ import {
 import Board from './components/Board';
 import ResetControls from './components/ResetControls';
 import MultiplayerSetup from './components/MultiplayerSetup';
+import PieceView from './components/PieceView'; // Import PieceView
 import {
   getInitialBoard,
   getAllValidMovesForPiece,
@@ -40,8 +41,10 @@ const App: React.FC = () => {
   const [showRules, setShowRules] = useState(false);
   const [isCheckerboardPattern, setIsCheckerboardPattern] = useState(false);
   const [showDebugFeatures, setShowDebugFeatures] = useState<boolean>(false);
-  const [selectedCapturedPieceForReinforcement, setSelectedCapturedPieceForReinforcement] = useState<Piece | null>(null);
-
+  // selectedCapturedPieceForReinforcement is effectively replaced by gameState.awaitingReinforcementPlacement.pieceToPlace
+  // For UI consistency, we can keep a local state to show which piece is *selected from the pile* before placement mode is fully active on board.
+  // However, the current flow with awaitingReinforcementPlacement.pieceToPlace might be enough.
+  // Let's remove selectedCapturedPieceForReinforcement and rely on awaitingReinforcementPlacement.
 
   const [playerName, setPlayerName] = useState<string>('');
   const [gameId, setGameId] = useState<string | null>(null);
@@ -80,6 +83,7 @@ const App: React.FC = () => {
           const incomingIs5ColMode = gameData.gameState.boardCols === BOARD_COLS_5_COLUMN;
           const incomingSecureThrone = gameData.gameState.isSecureThroneRequired;
 
+          // Sync local UI toggles with Firestore state ONLY if they differ
           if (is5ColumnModeActive !== incomingIs5ColMode) {
             setIs5ColumnModeActive(incomingIs5ColMode); 
           }
@@ -90,6 +94,7 @@ const App: React.FC = () => {
           setFirestoreGameDoc(gameData);
           setGameState(prev => ({
             ...gameData.gameState,
+            // Preserve selectedPiece and validMoves if it's the current player's turn and no modal actions are pending
             selectedPiece: prev.selectedPiece && 
                            prev.selectedPiece.player === gameData.gameState.currentPlayer && 
                            !gameData.gameState.awaitingPromotionChoice &&
@@ -127,15 +132,17 @@ const App: React.FC = () => {
         }
         if (gameData) {
           setFirestoreGameDoc(gameData);
-          if (gameData.status === 'active' && gameData.guestPlayerId) {
-            const incomingIs5ColMode = gameData.gameState.boardCols === BOARD_COLS_5_COLUMN;
-            const incomingSecureThrone = gameData.gameState.isSecureThroneRequired;
-            if (is5ColumnModeActive !== incomingIs5ColMode) {
+          // Sync UI toggles when waiting, in case host changed them via another client (though unlikely for create flow)
+          const incomingIs5ColMode = gameData.gameState.boardCols === BOARD_COLS_5_COLUMN;
+          const incomingSecureThrone = gameData.gameState.isSecureThroneRequired;
+           if (is5ColumnModeActive !== incomingIs5ColMode) {
               setIs5ColumnModeActive(incomingIs5ColMode);
             }
             if (isSecureThroneRequired !== incomingSecureThrone) {
                 setIsSecureThroneRequired(incomingSecureThrone);
             }
+
+          if (gameData.status === 'active' && gameData.guestPlayerId) {
             setGameState(gameData.gameState);
             setAppMode('PLAYING_ONLINE');
             setLoading(false);
@@ -150,7 +157,7 @@ const App: React.FC = () => {
       if (unsubscribe) unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appMode, gameId, localPlayerRole]);
+  }, [appMode, gameId, localPlayerRole]); // is5ColumnModeActive and isSecureThroneRequired removed to avoid loop with sync
 
   function getInitialLocalGameState(is5ColMode: boolean, secureThrone: boolean): GameState {
     const boardRows = BOARD_ROWS_DEFAULT;
@@ -174,8 +181,8 @@ const App: React.FC = () => {
       playerNorthName: "North",
       lastMoveTimestamp: null,
       awaitingPromotionChoice: null,
-      capturedBySouth: [],
-      capturedByNorth: [],
+      southsLostPieces: [], // South's own pieces captured by North
+      northsLostPieces: [], // North's own pieces captured by South
       awaitingReinforcementPlacement: null,
       boardRows: boardRows,
       boardCols: boardCols,
@@ -187,7 +194,7 @@ const App: React.FC = () => {
   const resetLocalGame = useCallback(() => {
     setGameState(getInitialLocalGameState(is5ColumnModeActive, isSecureThroneRequired)); // Pass current toggle states
     setShowRules(false);
-    setSelectedCapturedPieceForReinforcement(null);
+    // No selectedCapturedPieceForReinforcement to reset
   }, [is5ColumnModeActive, isSecureThroneRequired]);
 
   const handleGoToMultiplayerSetup = () => {
@@ -207,19 +214,22 @@ const App: React.FC = () => {
     setErrorMessage(null);
     setLoading(false);
     setCopyNotification({ text: '', visible: false });
-    setSelectedCapturedPieceForReinforcement(null);
+    // No selectedCapturedPieceForReinforcement to reset
   }
 
-  const handleCreateGame = async (pName: string, roomName: string) => {
+  const handleCreateGame = async (pName: string, roomName: string, gameIs5ColMode: boolean, gameSecureThrone: boolean) => {
     setLoading(true);
     setErrorMessage(null);
     setPlayerName(pName);
     const normalizedRoomName = roomName.trim().toUpperCase();
     setGameId(normalizedRoomName);
 
+    // Set App's local UI toggles to match what the host is creating
+    setIs5ColumnModeActive(gameIs5ColMode);
+    setIsSecureThroneRequired(gameSecureThrone);
+
     try {
-      // Pass current mode states when creating the game
-      const gameDoc = await createGameInFirestore(normalizedRoomName, sessionId, pName, is5ColumnModeActive, isSecureThroneRequired);
+      const gameDoc = await createGameInFirestore(normalizedRoomName, sessionId, pName, gameIs5ColMode, gameSecureThrone);
       setLocalPlayerRole(Player.SOUTH); 
       setFirestoreGameDoc(gameDoc);
       setGameState(gameDoc.gameState); 
@@ -230,6 +240,9 @@ const App: React.FC = () => {
       setErrorMessage("Failed to create game. The room name might be taken or invalid, or a data error occurred. Please try again.");
       setGameId(null);
       setLoading(false);
+       // Revert UI toggles if creation failed
+      setIs5ColumnModeActive(false); 
+      setIsSecureThroneRequired(true);
     }
   };
 
@@ -245,11 +258,13 @@ const App: React.FC = () => {
       if (gameDoc) {
         setLocalPlayerRole(Player.NORTH); 
         setFirestoreGameDoc(gameDoc);
-        // Sync the UI toggles with the joined game's state
+        
+        // Sync the UI toggles with the joined game's state (this is crucial)
         const joinedGameIs5Col = gameDoc.gameState.boardCols === BOARD_COLS_5_COLUMN;
         const joinedGameSecureThrone = gameDoc.gameState.isSecureThroneRequired;
         setIs5ColumnModeActive(joinedGameIs5Col);
         setIsSecureThroneRequired(joinedGameSecureThrone);
+        
         setGameState(gameDoc.gameState);
         setAppMode('PLAYING_ONLINE');
       } else {
@@ -306,7 +321,10 @@ const App: React.FC = () => {
     setPlayerName("Debugger");
     setGameId("DEBUGROOM");
     setLocalPlayerRole(Player.SOUTH);
-    setFirestoreGameDoc(null);
+    // For debug, use current App.tsx toggle states for the waiting screen display
+    setIs5ColumnModeActive(is5ColumnModeActive); 
+    setIsSecureThroneRequired(isSecureThroneRequired);
+    setFirestoreGameDoc(null); // No actual Firestore doc for debug
     setGameState(prev => ({
         ...getInitialLocalGameState(is5ColumnModeActive, isSecureThroneRequired), 
         playerSouthName: "Debugger",
@@ -354,7 +372,6 @@ const App: React.FC = () => {
 
     if (pieceThatMovedOrPlaced && pieceThatMovedOrPlaced.type === PieceType.JARL && 'row' in pieceThatMovedOrPlaced) { 
       if (isCoordinateEqual({row: pieceThatMovedOrPlaced.row, col: pieceThatMovedOrPlaced.col}, currentGameState.centralThroneCoord)) {
-        // Throne safety is checked before the move is allowed by getAllValidMovesForPiece if isSecureThroneRequired is true
         gameIsOver = true;
         winner = moverPlayer;
         localWinReason = `wins by reaching the Central Throne!`;
@@ -410,89 +427,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const executeMove = useCallback(async (move: Move) => {
-    if (appMode === 'PLAYING_ONLINE' && (!gameId || localPlayerRole !== gameState.currentPlayer)) {
-      console.warn("Not your turn or not in online game.");
-      return;
-    }
-    if (gameState.awaitingPromotionChoice || gameState.awaitingReinforcementPlacement) { 
-        return;
-    }
-
-    let newBoard = gameState.board.map(rowData => ({
-      squares: rowData.squares.map(sq => sq ? {...sq} : null)
-    }));
-    let newCapturedBySouth = [...gameState.capturedBySouth];
-    let newCapturedByNorth = [...gameState.capturedByNorth];
-
-    const movingPieceOriginal = newBoard[move.from.row].squares[move.from.col];
-    if (!movingPieceOriginal) return;
-
-    const capturedPiece = newBoard[move.to.row].squares[move.to.col];
-    if (capturedPiece && capturedPiece.player !== movingPieceOriginal.player) {
-      const pieceToStore: Piece = { id: capturedPiece.id, player: capturedPiece.player, type: capturedPiece.type }; 
-      if (movingPieceOriginal.player === Player.SOUTH) {
-        newCapturedBySouth.push(pieceToStore);
-      } else {
-        newCapturedByNorth.push(pieceToStore);
-      }
-    }
-
-    let finalPieceState: PieceOnBoard;
-    const movedPiece: PieceOnBoard = { ...movingPieceOriginal, row: move.to.row, col: move.to.col };
-    newBoard[move.to.row].squares[move.to.col] = movedPiece;
-    newBoard[move.from.row].squares[move.from.col] = null;
-    finalPieceState = movedPiece;
-    
-    const isRaven = finalPieceState.type === PieceType.RAVEN;
-    let isOnPromotionSquare = false;
-    if (isRaven) {
-        if (finalPieceState.player === Player.SOUTH && (finalPieceState.row === 0 || finalPieceState.row === 1)) {
-            isOnPromotionSquare = true;
-        } else if (finalPieceState.player === Player.NORTH && (finalPieceState.row === gameState.boardRows - 1 || finalPieceState.row === gameState.boardRows - 2)) {
-            isOnPromotionSquare = true;
-        }
-    }
-    
-    if (isOnPromotionSquare) { 
-      const moverDisplayName = finalPieceState.player === Player.SOUTH ? (gameState.playerSouthName || Player.SOUTH) : (gameState.playerNorthName || Player.NORTH);
-      const promoteMessage = `${moverDisplayName} (${finalPieceState.player}), promote Raven at ${String.fromCharCode(65 + finalPieceState.col)}${gameState.boardRows - finalPieceState.row} to Rook Raven?`;
-      setGameState(prev => ({
-        ...prev,
-        board: newBoard, 
-        selectedPiece: null,
-        validMoves: [],
-        awaitingPromotionChoice: { pieceId: finalPieceState.id, at: { row: finalPieceState.row, col: finalPieceState.col } },
-        message: promoteMessage,
-        capturedBySouth: newCapturedBySouth,
-        capturedByNorth: newCapturedByNorth,
-      }));
-      return; 
-    }
-
-    const newGameStateAfterMoveOnly = { 
-        ...gameState, 
-        board: newBoard, 
-        message: gameState.message, // Preserve current message if it's special, otherwise endTurn will set it
-        capturedBySouth: newCapturedBySouth,
-        capturedByNorth: newCapturedByNorth,
-    }; 
-    const newGameStateAfterTurnEnd = endTurn(newBoard, finalPieceState.player, finalPieceState, newGameStateAfterMoveOnly);
-
-    if (appMode === 'PLAYING_ONLINE' && gameId && gameId !== "DEBUGROOM") {
-      try {
-        setLoading(true);
-        await updateGameStateInFirestore(gameId, newGameStateAfterTurnEnd);
-      } catch (error) {
-        console.error("Error updating game state:", error);
-        setErrorMessage("Failed to sync move. Please check connection.");
-        setLoading(false); 
-      }
-    } else {
-      setGameState(newGameStateAfterTurnEnd);
-    }
-  }, [gameState, endTurn, appMode, gameId, localPlayerRole]);
-
   const handlePromotionConfirm = useCallback(async (doPromote: boolean) => {
     if (!gameState.awaitingPromotionChoice) return;
 
@@ -539,8 +473,148 @@ const App: React.FC = () => {
     } else {
         setGameState(finalGameState);
     }
-}, [gameState, endTurn, appMode, gameId, localPlayerRole]);
+  }, [gameState, endTurn, appMode, gameId]);
 
+  const handleReinforcementPlacement = useCallback(async (row: number, col: number) => {
+    if (!gameState.awaitingReinforcementPlacement) return;
+    
+    const { pieceToPlace } = gameState.awaitingReinforcementPlacement; // pieceToPlace already has its original player
+    
+    let newBoard = gameState.board.map(rowData => ({
+      squares: rowData.squares.map(sq => sq ? {...sq} : null)
+    }));
+
+    if (newBoard[row].squares[col]) { 
+      setGameState(prev => ({ ...prev, message: "Cannot place on an occupied square. Select an empty square or click a piece to cancel."}));
+      return;
+    }
+
+    const newPieceOnBoard: PieceOnBoard = {
+      ...pieceToPlace, 
+      player: pieceToPlace.player, // Piece retains its original player
+      row,
+      col,
+    };
+    newBoard[row].squares[col] = newPieceOnBoard;
+
+    let newSouthsLostPieces = [...gameState.southsLostPieces];
+    let newNorthsLostPieces = [...gameState.northsLostPieces];
+
+    // Remove the piece from the correct player's lost pile
+    if (pieceToPlace.player === Player.SOUTH) {
+      newSouthsLostPieces = newSouthsLostPieces.filter(p => p.id !== pieceToPlace.id);
+    } else {
+      newNorthsLostPieces = newNorthsLostPieces.filter(p => p.id !== pieceToPlace.id);
+    }
+    
+    const gameStateForEndTurn = {
+      ...gameState,
+      board: newBoard,
+      southsLostPieces: newSouthsLostPieces,
+      northsLostPieces: newNorthsLostPieces,
+      awaitingReinforcementPlacement: null, // Reset reinforcement mode
+    };
+
+    const finalGameState = endTurn(newBoard, pieceToPlace.player, newPieceOnBoard, gameStateForEndTurn);
+    // No selectedCapturedPieceForReinforcement to reset
+
+    if (appMode === 'PLAYING_ONLINE' && gameId && gameId !== "DEBUGROOM") {
+      try {
+        setLoading(true);
+        await updateGameStateInFirestore(gameId, finalGameState);
+      } catch (error) {
+        console.error("Error updating game state after reinforcement:", error);
+        setErrorMessage("Failed to sync reinforcement. Please check connection.");
+        setLoading(false);
+      }
+    } else {
+      setGameState(finalGameState);
+    }
+  }, [gameState, endTurn, appMode, gameId]);
+
+  const executeMove = useCallback(async (move: Move) => {
+    if (appMode === 'PLAYING_ONLINE' && (!gameId || localPlayerRole !== gameState.currentPlayer)) {
+      console.warn("Not your turn or not in online game.");
+      return;
+    }
+    if (gameState.awaitingPromotionChoice || gameState.awaitingReinforcementPlacement) { 
+        return;
+    }
+
+    let newBoard = gameState.board.map(rowData => ({
+      squares: rowData.squares.map(sq => sq ? {...sq} : null)
+    }));
+    let newSouthsLostPieces = [...gameState.southsLostPieces];
+    let newNorthsLostPieces = [...gameState.northsLostPieces];
+
+    const movingPieceOriginal = newBoard[move.from.row].squares[move.from.col];
+    if (!movingPieceOriginal) return;
+
+    const capturedPiece = newBoard[move.to.row].squares[move.to.col];
+    if (capturedPiece && capturedPiece.player !== movingPieceOriginal.player) {
+      const pieceToStore: Piece = { id: capturedPiece.id, player: capturedPiece.player, type: capturedPiece.type }; 
+      // Add to the original owner's lost pieces list
+      if (capturedPiece.player === Player.SOUTH) { // If a South piece was captured
+        newSouthsLostPieces.push(pieceToStore);
+      } else { // If a North piece was captured
+        newNorthsLostPieces.push(pieceToStore);
+      }
+    }
+
+    let finalPieceState: PieceOnBoard;
+    const movedPiece: PieceOnBoard = { ...movingPieceOriginal, row: move.to.row, col: move.to.col };
+    newBoard[move.to.row].squares[move.to.col] = movedPiece;
+    newBoard[move.from.row].squares[move.from.col] = null;
+    finalPieceState = movedPiece;
+    
+    const isRaven = finalPieceState.type === PieceType.RAVEN;
+    let isOnPromotionSquare = false;
+    if (isRaven) {
+        if (finalPieceState.player === Player.SOUTH && (finalPieceState.row === 0 || finalPieceState.row === 1)) {
+            isOnPromotionSquare = true;
+        } else if (finalPieceState.player === Player.NORTH && (finalPieceState.row === gameState.boardRows - 1 || finalPieceState.row === gameState.boardRows - 2)) {
+            isOnPromotionSquare = true;
+        }
+    }
+    
+    if (isOnPromotionSquare) { 
+      const moverDisplayName = finalPieceState.player === Player.SOUTH ? (gameState.playerSouthName || Player.SOUTH) : (gameState.playerNorthName || Player.NORTH);
+      const promoteMessage = `${moverDisplayName} (${finalPieceState.player}), promote Raven at ${String.fromCharCode(65 + finalPieceState.col)}${gameState.boardRows - finalPieceState.row} to Rook Raven?`;
+      setGameState(prev => ({
+        ...prev,
+        board: newBoard, 
+        selectedPiece: null,
+        validMoves: [],
+        awaitingPromotionChoice: { pieceId: finalPieceState.id, at: { row: finalPieceState.row, col: finalPieceState.col } },
+        message: promoteMessage,
+        southsLostPieces: newSouthsLostPieces,
+        northsLostPieces: newNorthsLostPieces,
+      }));
+      return; 
+    }
+
+    const newGameStateAfterMoveOnly = { 
+        ...gameState, 
+        board: newBoard, 
+        message: gameState.message, 
+        southsLostPieces: newSouthsLostPieces,
+        northsLostPieces: newNorthsLostPieces,
+    }; 
+    const newGameStateAfterTurnEnd = endTurn(newBoard, finalPieceState.player, finalPieceState, newGameStateAfterMoveOnly);
+
+    if (appMode === 'PLAYING_ONLINE' && gameId && gameId !== "DEBUGROOM") {
+      try {
+        setLoading(true);
+        await updateGameStateInFirestore(gameId, newGameStateAfterTurnEnd);
+      } catch (error) {
+        console.error("Error updating game state:", error);
+        setErrorMessage("Failed to sync move. Please check connection.");
+        setLoading(false); 
+      }
+    } else {
+      setGameState(newGameStateAfterTurnEnd);
+    }
+  }, [gameState, endTurn, appMode, gameId, localPlayerRole]);
 
   const deselectPiece = useCallback(() => {
     if (gameState.awaitingPromotionChoice || gameState.awaitingReinforcementPlacement) {
@@ -556,11 +630,10 @@ const App: React.FC = () => {
       ...prev,
       selectedPiece: null,
       validMoves: [],
-      message: messageForSelectPrompt
+      message: messageForSelectPrompt,
+      awaitingReinforcementPlacement: null, // Cancel reinforcement if one was selected from pile
     }));
-    setSelectedCapturedPieceForReinforcement(null);
   }, [gameState.currentPlayer, gameState.playerNorthName, gameState.playerSouthName, gameState.turnNumber, gameState.awaitingPromotionChoice, gameState.awaitingReinforcementPlacement]);
-
 
   const handleSquareClick = useCallback((row: number, col: number) => {
     if (gameState.gamePhase === GamePhase.GAME_OVER) return;
@@ -580,7 +653,6 @@ const App: React.FC = () => {
       }
       return;
     }
-
 
     const clickedSquareContent = gameState.board[row].squares[col];
 
@@ -616,7 +688,7 @@ const App: React.FC = () => {
         message: newValidMoves.length > 0 ? `Selected ${PIECE_SYMBOLS[clickedSquareContent.type]} at (${String.fromCharCode(65+col)}${gameState.boardRows-row}). Choose move.` : `Selected ${PIECE_SYMBOLS[clickedSquareContent.type]} at (${String.fromCharCode(65+col)}${gameState.boardRows-row}). No valid moves.`
       }));
     }
-  }, [gameState, executeMove, appMode, localPlayerRole, deselectPiece]);
+  }, [gameState, executeMove, appMode, localPlayerRole, deselectPiece, handleReinforcementPlacement]);
 
 
   const handlePieceDragStart = useCallback((piece: PieceOnBoard, event: React.DragEvent) => {
@@ -644,14 +716,17 @@ const App: React.FC = () => {
         const pieceElementVisual = document.createElement('div');
         const colors = PIECE_COLORS[piece.player];
         const symbol = PIECE_SYMBOLS[piece.type];
-        const isJarl = piece.type === PieceType.JARL;
-        const baseSizeClass = isJarl ? 'w-11 h-11 md:w-14 md:h-14' : 'w-9 h-9 md:w-11 md:h-11';
-        const symbolSizeClass = isJarl ? 'text-[1.8rem] md:text-[2.2rem]' : 'text-[1.65rem] md:text-[1.8rem]';
+        
+        const isJarlType = piece.type === PieceType.JARL; // Use type for sizing
+        const baseSizeClass = isJarlType ? 'w-11 h-11 md:w-14 md:h-14' : 'w-9 h-9 md:w-11 md:h-11';
+        const symbolSizeClass = isJarlType ? 'text-[1.8rem] md:text-[2.2rem]' : 'text-[1.65rem] md:text-[1.8rem]';
 
         let shapeClass = '';
         if (piece.type === PieceType.JARL || piece.type === PieceType.HIRDMAN) {
             shapeClass = 'rounded-full';
-        }
+        } else if (piece.type === PieceType.RAVEN) { // Standard Raven Rhombus
+            // Rhombus clip-path will be applied by direct style or specific class if needed for drag image
+        } // Rook Raven is square by default
         
         pieceElementVisual.className = `
           ${colors.base} border-2 ${colors.border} ${shapeClass}
@@ -659,15 +734,19 @@ const App: React.FC = () => {
           ${baseSizeClass} ${colors.text} font-runic ${symbolSizeClass}
         `;
         pieceElementVisual.textContent = symbol;
+         if (piece.type === PieceType.RAVEN) { // Apply clip-path for rhombus
+            pieceElementVisual.style.clipPath = 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)';
+        }
         
         draggedPieceImage.innerHTML = ''; 
         draggedPieceImage.appendChild(pieceElementVisual);
         
-        const rect = event.target.getBoundingClientRect();
-        const offsetX = event.clientX - rect.left;
-        const offsetY = event.clientY - rect.top;
-
-        event.dataTransfer.setDragImage(draggedPieceImage, offsetX, offsetY);
+        // Calculate offset based on the actual visual element being dragged, not necessarily event.target
+        // This attempts to center the drag image a bit more reliably.
+        const dragImageWidth = pieceElementVisual.offsetWidth;
+        const dragImageHeight = pieceElementVisual.offsetHeight;
+        
+        event.dataTransfer.setDragImage(draggedPieceImage, dragImageWidth / 2, dragImageHeight / 2);
     }
 
   }, [gameState, appMode, localPlayerRole, draggedPieceImage]);
@@ -709,93 +788,24 @@ const App: React.FC = () => {
     }
   }, [gameState.selectedPiece, deselectPiece, gameState.awaitingPromotionChoice, gameState.awaitingReinforcementPlacement]);
 
-  const handleInitiateReinforcement = useCallback(() => {
+  const handleSelectLostPieceForReinforcement = useCallback((piece: Piece) => {
+    // This function is called when a player clicks on one of their lost pieces.
+    // It should set the game into a state where the next click on an empty square places this piece.
     if (gameState.gamePhase === GamePhase.GAME_OVER || 
-        (appMode === 'PLAYING_ONLINE' && localPlayerRole !== gameState.currentPlayer) ||
+        gameState.currentPlayer !== piece.player || // Ensure the piece belongs to the current player
+        (appMode === 'PLAYING_ONLINE' && localPlayerRole !== piece.player) ||
         gameState.awaitingPromotionChoice || 
         gameState.awaitingReinforcementPlacement) return;
 
-    const capturedPieces = gameState.currentPlayer === Player.SOUTH ? gameState.capturedBySouth : gameState.capturedByNorth;
-    if (capturedPieces.length === 0) {
-      setGameState(prev => ({...prev, message: "No pieces to reinforce."}));
-      return;
-    }
-    
     setGameState(prev => ({
       ...prev,
-      selectedPiece: null,
+      selectedPiece: null, // Deselect any board piece
       validMoves: [],
-      message: `${prev.currentPlayer}, select one of your captured pieces to reinforce.`
+      awaitingReinforcementPlacement: { pieceToPlace: piece, originalPlayer: piece.player }, 
+      message: `Selected ${PIECE_SYMBOLS[piece.type]} for reinforcement. Click an empty square to place it.`
     }));
   }, [gameState, appMode, localPlayerRole]);
-
-  const handleSelectCapturedPieceForReinforcement = useCallback((piece: Piece) => {
-    setSelectedCapturedPieceForReinforcement(piece);
-    setGameState(prev => ({
-      ...prev,
-      awaitingReinforcementPlacement: { pieceToPlace: piece, originalPlayer: piece.player }, 
-      message: `Select an empty square to place your ${PIECE_SYMBOLS[piece.type]}.`
-    }));
-  }, []);
   
-  const handleReinforcementPlacement = useCallback(async (row: number, col: number) => {
-    if (!gameState.awaitingReinforcementPlacement || !selectedCapturedPieceForReinforcement) return;
-    
-    const { pieceToPlace } = gameState.awaitingReinforcementPlacement;
-    
-    let newBoard = gameState.board.map(rowData => ({
-      squares: rowData.squares.map(sq => sq ? {...sq} : null)
-    }));
-
-    if (newBoard[row].squares[col]) { 
-      setGameState(prev => ({ ...prev, message: "Cannot place on an occupied square."}));
-      return;
-    }
-
-    const newPieceOnBoard: PieceOnBoard = {
-      ...pieceToPlace, 
-      player: gameState.currentPlayer, 
-      row,
-      col,
-    };
-    newBoard[row].squares[col] = newPieceOnBoard;
-
-    let newCapturedBySouth = [...gameState.capturedBySouth];
-    let newCapturedByNorth = [...gameState.capturedByNorth];
-
-    if (gameState.currentPlayer === Player.SOUTH) {
-      newCapturedBySouth = newCapturedBySouth.filter(p => p.id !== pieceToPlace.id);
-    } else {
-      newCapturedByNorth = newCapturedByNorth.filter(p => p.id !== pieceToPlace.id);
-    }
-    
-    const gameStateForEndTurn = {
-      ...gameState,
-      board: newBoard,
-      capturedBySouth: newCapturedBySouth,
-      capturedByNorth: newCapturedByNorth,
-      awaitingReinforcementPlacement: null,
-    };
-
-    const finalGameState = endTurn(newBoard, gameState.currentPlayer, newPieceOnBoard, gameStateForEndTurn);
-    setSelectedCapturedPieceForReinforcement(null);
-
-
-    if (appMode === 'PLAYING_ONLINE' && gameId && gameId !== "DEBUGROOM") {
-      try {
-        setLoading(true);
-        await updateGameStateInFirestore(gameId, finalGameState);
-      } catch (error) {
-        console.error("Error updating game state after reinforcement:", error);
-        setErrorMessage("Failed to sync reinforcement. Please check connection.");
-        setLoading(false);
-      }
-    } else {
-      setGameState(finalGameState);
-    }
-  }, [gameState, endTurn, appMode, gameId, localPlayerRole, selectedCapturedPieceForReinforcement]);
-
-
   const toggleRules = () => setShowRules(prev => !prev);
   const toggleCheckerboardPattern = () => {
     if (gameState.awaitingPromotionChoice || gameState.awaitingReinforcementPlacement) return;
@@ -803,25 +813,25 @@ const App: React.FC = () => {
   }
   const toggle5ColumnMode = () => {
     if (gameState.awaitingPromotionChoice || gameState.awaitingReinforcementPlacement) return;
-    if (appMode === 'PLAYING_ONLINE') {
-        setErrorMessage("Board mode cannot be changed during an online game.");
+    if (appMode === 'PLAYING_ONLINE' || appMode === 'WAITING_FOR_OPPONENT') { // Also disable if waiting for opponent
+        setErrorMessage("Board mode cannot be changed during an online game or while waiting for an opponent.");
         return;
     }
     const newMode = !is5ColumnModeActive;
     setIs5ColumnModeActive(newMode);
     setGameState(getInitialLocalGameState(newMode, gameState.isSecureThroneRequired)); 
-    setSelectedCapturedPieceForReinforcement(null);
+     // No selectedCapturedPieceForReinforcement to reset
   };
   const toggleSecureThroneRequired = () => {
     if (gameState.awaitingPromotionChoice || gameState.awaitingReinforcementPlacement) return;
-    if (appMode === 'PLAYING_ONLINE') {
-        setErrorMessage("Throne safety rule cannot be changed during an online game.");
+    if (appMode === 'PLAYING_ONLINE' || appMode === 'WAITING_FOR_OPPONENT') { // Also disable if waiting for opponent
+        setErrorMessage("Throne safety rule cannot be changed during an online game or while waiting for an opponent.");
         return;
     }
     const newSetting = !isSecureThroneRequired;
     setIsSecureThroneRequired(newSetting);
-    setGameState(getInitialLocalGameState(is5ColumnModeActive, newSetting)); 
-    setSelectedCapturedPieceForReinforcement(null);
+    setGameState(getInitialLocalGameState(is5ColumnModeActive, newSetting));
+     // No selectedCapturedPieceForReinforcement to reset
   };
 
 
@@ -861,7 +871,8 @@ const App: React.FC = () => {
       );
     }
     
-    if (gameState.awaitingPromotionChoice || gameState.awaitingReinforcementPlacement || selectedCapturedPieceForReinforcement) {
+    // If awaiting reinforcement and a piece is selected from the pile, the message is already set.
+    if (gameState.awaitingPromotionChoice || gameState.awaitingReinforcementPlacement) {
         return messageToRender; 
     }
 
@@ -942,12 +953,19 @@ const App: React.FC = () => {
   }
 
   if (appMode === 'WAITING_FOR_OPPONENT') {
+    // Determine settings from gameState if available (synced from Firestore)
+    // or use the App.tsx level is5ColumnModeActive and isSecureThroneRequired for initial display if gameState not fully populated yet
+    const displayIs5Col = firestoreGameDoc ? firestoreGameDoc.gameState.boardCols === BOARD_COLS_5_COLUMN : is5ColumnModeActive;
+    const displaySecureThrone = firestoreGameDoc ? firestoreGameDoc.gameState.isSecureThroneRequired : isSecureThroneRequired;
+
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4 text-center text-[#E0D8CC]">
         <h1 className="text-4xl font-medieval mb-8">Waiting for Opponent</h1>
         <p className="text-lg text-[#C0B6A8] mb-4">Share this Room Name with your opponent.</p>
-        <p className="text-md text-[#A09488] mb-1">Board Mode: {is5ColumnModeActive ? '5-Column' : '7-Column'}</p>
-        <p className="text-md text-[#A09488] mb-1">Throne Safety: {isSecureThroneRequired ? 'Required' : 'Not Required'}</p>
+        <div className="text-md text-[#A09488] mb-4 bg-[#3C3731] p-3 rounded-lg shadow-sm inline-block">
+            <p className="mb-1">Board Mode: <span className="font-semibold text-[#E0D8CC]">{displayIs5Col ? '5-Column' : '7-Column'}</span></p>
+            <p>Throne Safety: <span className="font-semibold text-[#E0D8CC]">{displaySecureThrone ? 'Required' : 'Not Required'}</span></p>
+        </div>
         <div className="relative text-center mb-8">
             <button
                 ref={copyRoomNameButtonRef}
@@ -998,14 +1016,12 @@ const App: React.FC = () => {
                               (firestoreGameDoc?.hostPlayerName || (appMode === 'LOCAL_PLAY' ? gameState.playerSouthName : "Opponent"));
   const localPlayerDisplayName = appMode === 'PLAYING_ONLINE' ? playerName : (localPlayerRole ? (localPlayerRole === Player.SOUTH ? gameState.playerSouthName : gameState.playerNorthName) : (gameState.currentPlayer === Player.SOUTH ? gameState.playerSouthName : gameState.playerNorthName) );
 
+  const isUiDisabled = !!gameState.awaitingPromotionChoice || !!gameState.awaitingReinforcementPlacement;
+
   const isInteractionAllowedForLocalPlayer = 
     (appMode === 'LOCAL_PLAY' || localPlayerRole === gameState.currentPlayer) && 
     gameState.gamePhase !== GamePhase.GAME_OVER && 
-    !gameState.awaitingPromotionChoice &&
-    !gameState.awaitingReinforcementPlacement &&
-    !selectedCapturedPieceForReinforcement; 
-
-  const isUiDisabled = !!gameState.awaitingPromotionChoice || !!gameState.awaitingReinforcementPlacement || !!selectedCapturedPieceForReinforcement;
+    !isUiDisabled; 
 
 
   return (
@@ -1019,7 +1035,6 @@ const App: React.FC = () => {
                  </div>
             )}
             {appMode === 'LOCAL_PLAY' && (<div className="w-1/3 flex items-center">
-                 {/* Placeholder or empty div to maintain layout if needed, or remove if not needed for centering */}
             </div>)}
 
             <div className="flex-1 text-center">
@@ -1029,11 +1044,10 @@ const App: React.FC = () => {
              {appMode === 'PLAYING_ONLINE' && gameId && (
                 <div className="text-right text-sm text-[#C0B6A8] font-medieval w-1/3 truncate">
                     Room: {gameId}<br />
-                    Throne Safety: {gameState.isSecureThroneRequired ? 'Required' : 'Not Req.'}
+                    Board: {is5ColumnModeActive ? '5-Col' : '7-Col'} | Throne: {isSecureThroneRequired ? 'Secure' : 'Open'}
                 </div>
             )}
             {appMode === 'LOCAL_PLAY' && ( <div className="w-1/3 flex items-center justify-end">
-                {/* Placeholder or empty div to maintain layout if needed, or remove if not needed for centering */}
             </div> )}
         </div>
       </header>
@@ -1066,11 +1080,12 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {selectedCapturedPieceForReinforcement && !gameState.awaitingReinforcementPlacement && (appMode !== 'PLAYING_ONLINE' || gameState.currentPlayer === localPlayerRole) && (
+      {/* Message for selected reinforcement piece - this is covered by the main message bar now */}
+      {/* {gameState.awaitingReinforcementPlacement && gameState.awaitingReinforcementPlacement.pieceToPlace && (appMode !== 'PLAYING_ONLINE' || gameState.currentPlayer === localPlayerRole) && (
          <div className="my-3 p-3 w-full max-w-md text-center bg-[#4A4238] rounded shadow">
-           <p className="text-[#E0D8CC] mb-3">Selected <span className="font-runic">{PIECE_SYMBOLS[selectedCapturedPieceForReinforcement.type]}</span> for reinforcement. Click an empty square to place it.</p>
+           <p className="text-[#E0D8CC] mb-3">Selected <span className="font-runic">{PIECE_SYMBOLS[gameState.awaitingReinforcementPlacement.pieceToPlace.type]}</span> for reinforcement. Click an empty square to place it.</p>
          </div>
-      )}
+      )} */}
 
 
       {errorMessage && (appMode === 'PLAYING_ONLINE' || appMode === 'LOCAL_PLAY') && (
@@ -1078,32 +1093,106 @@ const App: React.FC = () => {
           {errorMessage}
         </div>
       )}
+      
+      <div className="flex flex-col items-center gap-2 w-full max-w-5xl">
+        <div className="flex flex-row justify-center items-start w-full gap-x-1 sm:gap-x-2 md:gap-x-3 px-1">
+            {/* North's Lost Pieces (originally North's, captured by South) - Top Left */}
+            <div className="flex-shrink-0 w-12 sm:w-14 md:w-16 lg:w-[70px] self-start pt-2">
+              {(appMode === 'LOCAL_PLAY' || appMode === 'PLAYING_ONLINE') && gameState.gamePhase === GamePhase.PLAYING && (
+                <div className="flex flex-col items-center space-y-1">
+                  {gameState.northsLostPieces.map(p => {
+                    const canInteract = gameState.currentPlayer === Player.NORTH && (appMode === 'LOCAL_PLAY' || localPlayerRole === Player.NORTH) && !isUiDisabled;
+                    return (
+                      <div 
+                          key={`lostN-${p.id}`}
+                          title={canInteract ? `Select North's ${PIECE_SYMBOLS[p.type]} to reinforce` : `North's lost ${PIECE_SYMBOLS[p.type]}`}
+                          onClick={canInteract ? () => handleSelectLostPieceForReinforcement(p) : undefined}
+                          className={`p-0.5 rounded transition-opacity ${canInteract ? 'cursor-pointer hover:bg-[#4A4238]' : 'opacity-60 cursor-not-allowed'}`}
+                          aria-label={canInteract ? `Select North's lost ${p.type} to place on board` : `North's lost ${p.type}`}
+                          role={canInteract ? "button" : undefined}
+                          tabIndex={canInteract ? 0 : undefined}
+                          onKeyDown={canInteract ? (e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectLostPieceForReinforcement(p); } : undefined}
+                      >
+                          <PieceView
+                            type={p.type}
+                            player={p.player} // Should be Player.NORTH
+                            colors={PIECE_COLORS[p.player]}
+                            symbol={PIECE_SYMBOLS[p.type]}
+                            isJarl={p.type === PieceType.JARL}
+                            isDraggable={false}
+                            onDragStart={()=>{}}
+                            onDragEnd={()=>{}}
+                            pieceId={`lostN-${p.id}-view`}
+                            sizeVariant="small"
+                          />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
-      <div className="flex flex-col items-center gap-4 w-full max-w-5xl">
-        <section aria-labelledby="game-board-heading" className="w-full flex justify-center">
-           <h2 id="game-board-heading" className="sr-only">Game Board</h2>
-            <Board
-              board={gameState.board}
-              onSquareClick={handleSquareClick}
-              selectedPiece={gameState.selectedPiece}
-              validMoves={gameState.validMoves}
-              playerColors={PIECE_COLORS}
-              pieceSymbols={PIECE_SYMBOLS}
-              centralThroneCoord={gameState.centralThroneCoord} 
-              isCheckerboardPattern={isCheckerboardPattern}
-              isInteractionDisabled={!isInteractionAllowedForLocalPlayer || isUiDisabled}
-              currentPlayer={gameState.currentPlayer}
-              gamePhase={gameState.gamePhase}
-              onPieceDragStart={handlePieceDragStart}
-              onPieceDragEnd={handlePieceDragEnd}
-              onPieceDropOnSquare={handlePieceDropOnSquare}
-              boardRows={gameState.boardRows} 
-              boardCols={gameState.boardCols}
-              isReinforcementMode={!!gameState.awaitingReinforcementPlacement}
-            />
-        </section>
+            <section aria-labelledby="game-board-heading" className="flex-shrink-0">
+               <h2 id="game-board-heading" className="sr-only">Game Board</h2>
+                <Board
+                  board={gameState.board}
+                  onSquareClick={handleSquareClick}
+                  selectedPiece={gameState.selectedPiece}
+                  validMoves={gameState.validMoves}
+                  playerColors={PIECE_COLORS}
+                  pieceSymbols={PIECE_SYMBOLS}
+                  centralThroneCoord={gameState.centralThroneCoord} 
+                  isCheckerboardPattern={isCheckerboardPattern}
+                  isInteractionDisabled={!isInteractionAllowedForLocalPlayer || isUiDisabled}
+                  currentPlayer={gameState.currentPlayer}
+                  gamePhase={gameState.gamePhase}
+                  onPieceDragStart={handlePieceDragStart}
+                  onPieceDragEnd={handlePieceDragEnd}
+                  onPieceDropOnSquare={handlePieceDropOnSquare}
+                  boardRows={gameState.boardRows} 
+                  boardCols={gameState.boardCols}
+                  isReinforcementMode={!!gameState.awaitingReinforcementPlacement}
+                />
+            </section>
 
-        <div className="flex flex-col items-center w-full mt-2 space-y-3">
+            {/* South's Lost Pieces (originally South's, captured by North) - Bottom Right */}
+            <div className="flex-shrink-0 w-12 sm:w-14 md:w-16 lg:w-[70px] self-end pb-2">
+               {(appMode === 'LOCAL_PLAY' || appMode === 'PLAYING_ONLINE') && gameState.gamePhase === GamePhase.PLAYING && (
+                  <div className="flex flex-col items-center space-y-1">
+                    {gameState.southsLostPieces.map(p => {
+                      const canInteract = gameState.currentPlayer === Player.SOUTH && (appMode === 'LOCAL_PLAY' || localPlayerRole === Player.SOUTH) && !isUiDisabled;
+                       return (
+                        <div 
+                            key={`lostS-${p.id}`}
+                            title={canInteract ? `Select South's ${PIECE_SYMBOLS[p.type]} to reinforce` : `South's lost ${PIECE_SYMBOLS[p.type]}`}
+                            onClick={canInteract ? () => handleSelectLostPieceForReinforcement(p) : undefined}
+                            className={`p-0.5 rounded transition-opacity ${canInteract ? 'cursor-pointer hover:bg-[#4A4238]' : 'opacity-60 cursor-not-allowed'}`}
+                            aria-label={canInteract ? `Select South's lost ${p.type} to place on board` : `South's lost ${p.type}`}
+                            role={canInteract ? "button" : undefined}
+                            tabIndex={canInteract ? 0 : undefined}
+                            onKeyDown={canInteract ? (e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectLostPieceForReinforcement(p); } : undefined}
+                        >
+                            <PieceView
+                                type={p.type}
+                                player={p.player} // Should be Player.SOUTH
+                                colors={PIECE_COLORS[p.player]}
+                                symbol={PIECE_SYMBOLS[p.type]}
+                                isJarl={p.type === PieceType.JARL}
+                                isDraggable={false}
+                                onDragStart={()=>{}}
+                                onDragEnd={()=>{}}
+                                pieceId={`lostS-${p.id}-view`}
+                                sizeVariant="small"
+                            />
+                        </div>
+                       );
+                    })}
+                  </div>
+               )}
+            </div>
+        </div>
+
+        <div className="flex flex-col items-center w-full mt-1 space-y-2">
             <div className="flex flex-col sm:flex-row justify-center items-center w-full gap-3">
               <ResetControls
                 onReset={appMode === 'PLAYING_ONLINE' ? handleLeaveGame : resetLocalGame}
@@ -1122,19 +1211,18 @@ const App: React.FC = () => {
               )}
             </div>
             
-            {/* Settings Toggles */}
             <div className="flex justify-center w-full">
               <button
                 onClick={toggleSecureThroneRequired}
                 className={`flex justify-between items-center px-4 sm:px-5 py-2.5 text-[#E0D8CC] font-semibold transition-colors duration-150 font-medieval w-full max-w-xs text-sm sm:text-base focus:outline-none shadow-none ${appMode === 'PLAYING_ONLINE' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                aria-pressed={gameState.isSecureThroneRequired}
-                title={gameState.isSecureThroneRequired ? "Throne safety: REQUIRED (Must be clear to win)" : "Throne safety: NOT REQUIRED (Can win on threatened Throne)"}
+                aria-pressed={isSecureThroneRequired} // Use App.tsx state for display consistency
+                title={isSecureThroneRequired ? "Throne safety: REQUIRED (Must be clear to win)" : "Throne safety: NOT REQUIRED (Can win on threatened Throne)"}
                 disabled={isUiDisabled || appMode === 'PLAYING_ONLINE'}
               >
                 <span>Secure Throne for Victory</span>
-                <div className={`relative inline-block w-10 h-[22px] rounded-full transition-colors duration-200 ease-in-out ${gameState.isSecureThroneRequired ? 'bg-[#8C7062]' : 'bg-[#4A4238]'}`}>
+                <div className={`relative inline-block w-10 h-[22px] rounded-full transition-colors duration-200 ease-in-out ${isSecureThroneRequired ? 'bg-[#8C7062]' : 'bg-[#4A4238]'}`}>
                   <span
-                    className={`absolute top-[1px] left-[1px] inline-block w-5 h-5 bg-white rounded-full transform transition-transform duration-200 ease-in-out ${gameState.isSecureThroneRequired ? 'translate-x-[18px]' : 'translate-x-0'}`}
+                    className={`absolute top-[1px] left-[1px] inline-block w-5 h-5 bg-white rounded-full transform transition-transform duration-200 ease-in-out ${isSecureThroneRequired ? 'translate-x-[18px]' : 'translate-x-0'}`}
                   />
                 </div>
               </button>
@@ -1143,7 +1231,7 @@ const App: React.FC = () => {
               <button
                 onClick={toggle5ColumnMode}
                 className={`flex justify-between items-center px-4 sm:px-5 py-2.5 text-[#E0D8CC] font-semibold transition-colors duration-150 font-medieval w-full max-w-xs text-sm sm:text-base focus:outline-none shadow-none ${appMode === 'PLAYING_ONLINE' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                aria-pressed={is5ColumnModeActive}
+                aria-pressed={is5ColumnModeActive} // Use App.tsx state for display consistency
                 title={is5ColumnModeActive ? "Switch to 7-column mode" : "Switch to 5-column mode"}
                 disabled={isUiDisabled || appMode === 'PLAYING_ONLINE'}
               >
@@ -1244,7 +1332,7 @@ const App: React.FC = () => {
                             <ul className="list-disc list-outside ml-5">
                                 <li>Slides orthogonally (like a chess Rook) any number of empty squares.</li>
                                 <li>Captures by landing on an enemy piece.</li>
-                                <li>Acquired by promoting a Standard Raven.</li>
+                                <li>Acquired by promoting a Standard Raven. Some game modes may start with Rook Ravens.</li>
                             </ul>
                             </div>
                         </div>
@@ -1259,13 +1347,12 @@ const App: React.FC = () => {
                         <div>
                             <h4 className="text-lg font-semibold text-[#E0D8CC] mb-1 font-medieval">Reinforcements</h4>
                             <ul className="list-disc list-outside ml-5 space-y-1">
-                                <li>When a piece is captured, it is added to the capturing player's collection of captured pieces.</li>
-                                <li>A player may choose to spend their entire turn to reinforce.
-                                    If they have captured pieces, a "Reinforce" button will appear.
-                                </li>
-                                <li>After initiating reinforcement, the player selects one of their captured pieces.</li>
-                                <li>The selected piece can then be placed on any empty square on the board. This completes the turn.</li>
-                                <li>The placed piece is now controlled by the player who reinforced it, regardless of its original player.</li>
+                                <li>When a piece is captured, it is added to its original owner's collection of "lost pieces." These are displayed on the sides of the board (North's lost pieces on the top-left, South's on the bottom-right).</li>
+                                <li>A player may choose to spend their entire turn to reinforce if they have lost pieces available.</li>
+                                <li>To initiate reinforcement, the player clicks on one of
+their lost pieces from their side stack.</li>
+                                <li>The selected piece can then be placed on any empty square on the board. This action completes the turn.</li>
+                                <li>The placed piece re-enters play under the control of its original owner.</li>
                             </ul>
                         </div>
                         <div>
@@ -1274,11 +1361,12 @@ const App: React.FC = () => {
                             <li>Board: {gameState.boardRows} rows high, {gameState.boardCols} columns wide. Coordinates A1-{String.fromCharCode(65+gameState.boardCols-1)}{gameState.boardRows}.</li>
                             <li>A single Central Throne (♦) is at {String.fromCharCode(65 + gameState.centralThroneCoord.col)}{gameState.boardRows - gameState.centralThroneCoord.row}.</li>
                             <li>Players: South (Light, pieces start on rows 1-2) and North (Dark, pieces start on rows {gameState.boardRows-1}-{gameState.boardRows}). South plays first.</li>
-                            {is5ColumnModeActive ? (
+                            {is5ColumnModeActive ? ( // Use App.tsx state for rule display
                                 <>
-                                <li>Jarls: C1 (South), C9 (North).</li>
-                                <li>Hirdmen (3 per player): B8, C8, D8 (North); B2, C2, D2 (South).</li>
-                                <li>Ravens (4 Standard Ravens per player): A9, E9, A8, E8 (North); A1, E1, A2, E2 (South).</li>
+                                <li>Jarls: C2 (South), C8 (North).</li>
+                                <li>Hirdmen (3 per player): B1, C1, D1 (South); B9, C9, D9 (North).</li>
+                                <li>Standard Ravens (2 per player): A1, E2 (South); A9, E8 (North).</li>
+                                <li>Rook Ravens (2 per player): E1, A2 (South); E9, A8 (North).</li>
                                 </>
                             ) : (
                                 <>
@@ -1293,62 +1381,6 @@ const App: React.FC = () => {
                     </section>
                 )}
             </div>
-
-            {(appMode === 'LOCAL_PLAY' || appMode === 'PLAYING_ONLINE') && gameState.gamePhase === GamePhase.PLAYING && (
-              <div className="w-full max-w-md mt-4 p-3 bg-[#3C3832] rounded shadow">
-                <h4 className="text-md font-semibold text-[#E0D8CC] mb-2 text-center font-medieval">Captured Pieces</h4>
-                {(gameState.currentPlayer === Player.SOUTH || appMode === 'LOCAL_PLAY') && (
-                    <div className="mb-2">
-                        <p className="text-sm text-[#C0B6A8]">{gameState.playerSouthName || Player.SOUTH}'s Captures ({gameState.capturedBySouth.length}):</p>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                            {gameState.capturedBySouth.map(p => (
-                                <button 
-                                    key={`capS-${p.id}`}
-                                    title={`Select ${p.type} to reinforce`}
-                                    onClick={() => handleSelectCapturedPieceForReinforcement(p)}
-                                    disabled={gameState.currentPlayer !== Player.SOUTH || isUiDisabled || selectedCapturedPieceForReinforcement !== null}
-                                    className={`font-runic text-xl p-1 rounded 
-                                        ${PIECE_COLORS[p.player === Player.SOUTH ? Player.NORTH : Player.SOUTH].base} 
-                                        ${PIECE_COLORS[p.player === Player.SOUTH ? Player.NORTH : Player.SOUTH].text}
-                                        ${(gameState.currentPlayer === Player.SOUTH && !isUiDisabled && !selectedCapturedPieceForReinforcement) ? 'cursor-pointer hover:opacity-75' : 'cursor-not-allowed opacity-50'}`}
-                                >
-                                    {PIECE_SYMBOLS[p.type]}
-                                </button>
-                            ))}
-                        </div>
-                        {gameState.currentPlayer === Player.SOUTH && gameState.capturedBySouth.length > 0 && !selectedCapturedPieceForReinforcement && !gameState.awaitingReinforcementPlacement && (
-                           <button onClick={handleInitiateReinforcement} disabled={isUiDisabled} className="mt-2 text-xs">Initiate Reinforce</button>
-                        )}
-                    </div>
-                )}
-                {(gameState.currentPlayer === Player.NORTH || appMode === 'LOCAL_PLAY') && (
-                    <div>
-                        <p className="text-sm text-[#C0B6A8]">{gameState.playerNorthName || Player.NORTH}'s Captures ({gameState.capturedByNorth.length}):</p>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                             {gameState.capturedByNorth.map(p => (
-                                <button 
-                                    key={`capN-${p.id}`}
-                                    title={`Select ${p.type} to reinforce`}
-                                    onClick={() => handleSelectCapturedPieceForReinforcement(p)}
-                                    disabled={gameState.currentPlayer !== Player.NORTH || isUiDisabled || selectedCapturedPieceForReinforcement !== null}
-                                    className={`font-runic text-xl p-1 rounded
-                                        ${PIECE_COLORS[p.player === Player.SOUTH ? Player.NORTH : Player.SOUTH].base}
-                                        ${PIECE_COLORS[p.player === Player.SOUTH ? Player.NORTH : Player.SOUTH].text}
-                                        ${(gameState.currentPlayer === Player.NORTH && !isUiDisabled && !selectedCapturedPieceForReinforcement) ? 'cursor-pointer hover:opacity-75' : 'cursor-not-allowed opacity-50'}`}
-                                >
-                                    {PIECE_SYMBOLS[p.type]}
-                                </button>
-                            ))}
-                        </div>
-                         {gameState.currentPlayer === Player.NORTH && gameState.capturedByNorth.length > 0 && !selectedCapturedPieceForReinforcement && !gameState.awaitingReinforcementPlacement &&(
-                           <button onClick={handleInitiateReinforcement} disabled={isUiDisabled} className="mt-2 text-xs">Initiate Reinforce</button>
-                        )}
-                    </div>
-                )}
-              </div>
-            )}
-
-
         </div>
       </div>
     </div>

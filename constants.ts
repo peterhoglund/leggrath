@@ -59,30 +59,44 @@ export const INITIAL_PIECES_SETUP_7_COLUMN: { player: Player; type: PieceType; c
 // --- 5-Column Mode Constants ---
 export const BOARD_COLS_5_COLUMN = 5; // 5 columns (width)
 export const CENTRAL_THRONE_COORD_5_COLUMN: Coordinate = { row: 4, col: 2 }; // Center of 9x5 board (C5, 0-indexed)
-// Player pieces: 1 Jarl, 4 Ravens, 3 Hirdmen = 8 pieces per player
+// Player pieces: 1 Jarl, 3 Hirdmen, 2 Ravens, 2 Rook Ravens = 8 pieces per player
 export const INITIAL_PIECES_SETUP_5_COLUMN: { player: Player; type: PieceType; coords: Coordinate[] }[] = [
   // Player NORTH (Dark pieces, starts at top rows 0, 1 - displayed as 9, 8)
-  { player: Player.NORTH, type: PieceType.JARL, coords: [{ row: 0, col: 2 }] }, // C9 (Jarl in center of first rank)
-  { player: Player.NORTH, type: PieceType.RAVEN, coords: [
-      { row: 0, col: 0 }, { row: 0, col: 4 }, // A9, E9 (Ravens on edges of first rank)
-      { row: 1, col: 0 }, { row: 1, col: 4 }  // A8, E8 (Ravens on edges of second rank)
+  { player: Player.NORTH, type: PieceType.JARL, coords: [{ row: 0, col: 2 }] }, // C8 (Jarl)
+  { player: Player.NORTH, type: PieceType.HIRDMAN, coords: [
+      { row: 1, col: 1 }, 
+      { row: 1, col: 2 }, 
+      { row: 1, col: 3 } // B9, C9, D9 (Hirdmen)
     ] 
   },
-  { player: Player.NORTH, type: PieceType.HIRDMAN, coords: [
-      { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 1, col: 3 } // B8, C8, D8 (Hirdmen in center of second rank)
+  { player: Player.NORTH, type: PieceType.RAVEN, coords: [
+      { row: 0, col: 4 }, // A9 (Raven)
+      { row: 1, col: 0 }  // E8 (Raven)
     ] 
+  },
+  { player: Player.NORTH, type: PieceType.ROOK_RAVEN, coords: [
+      { row: 0, col: 0 }, // E9 (Rook Raven)
+      { row: 1, col: 4 }  // A8 (Rook Raven)
+    ]
   },
   
   // Player SOUTH (Light pieces, starts at bottom rows 8, 7 - displayed as 1, 2)
-  { player: Player.SOUTH, type: PieceType.JARL, coords: [{ row: 8, col: 2 }] }, // C1
-  { player: Player.SOUTH, type: PieceType.RAVEN, coords: [
-      { row: 8, col: 0 }, { row: 8, col: 4 }, // A1, E1
-      { row: 7, col: 0 }, { row: 7, col: 4 }  // A2, E2
+  { player: Player.SOUTH, type: PieceType.JARL, coords: [{ row: 8, col: 2 }] }, // C2 (Jarl)
+  { player: Player.SOUTH, type: PieceType.HIRDMAN, coords: [
+      { row: 7, col: 1 }, 
+      { row: 7, col: 2 }, 
+      { row: 7, col: 3 }, // B1, C1, D1 (Hirdmen)
     ] 
   },
-  { player: Player.SOUTH, type: PieceType.HIRDMAN, coords: [
-      { row: 7, col: 1 }, { row: 7, col: 2 }, { row: 7, col: 3 } // B2, C2, D2
+  { player: Player.SOUTH, type: PieceType.RAVEN, coords: [
+      { row: 8, col: 0 }, // A1 (Raven)
+      { row: 7, col: 4 }  // E2 (Raven)
     ] 
+  },
+  { player: Player.SOUTH, type: PieceType.ROOK_RAVEN, coords: [
+      { row: 8, col: 4 }, // E1 (Rook Raven)
+      { row: 7, col: 0 }  // A2 (Rook Raven)
+    ]
   }
 ];
 
@@ -96,5 +110,5 @@ export const PIECE_SYMBOLS: Record<PieceType, string> = {
   [PieceType.JARL]: 'ᛟ',
   [PieceType.HIRDMAN]: 'ᚼ',
   [PieceType.RAVEN]: 'ᛉ', // Standard Raven
-  [PieceType.ROOK_RAVEN]: 'ᛣ' // Rook Raven (promoted) - new symbol
+  [PieceType.ROOK_RAVEN]: 'ᚢ' // Rook Raven (promoted) - new symbol
 };

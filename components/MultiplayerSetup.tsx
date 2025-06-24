@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 
 interface MultiplayerSetupProps {
-  onCreateGame: (playerName: string, gameRoomName: string) => void;
+  onCreateGame: (playerName: string, gameRoomName: string, is5ColMode: boolean, secureThrone: boolean) => void;
   onJoinGame: (playerName: string, gameRoomName: string) => void;
   onBackToMainMenu: () => void;
   loading: boolean;
@@ -18,23 +18,22 @@ const MultiplayerSetup: React.FC<MultiplayerSetupProps> = ({
 }) => {
   const [playerName, setPlayerName] = useState<string>('');
   const [gameRoomName, setGameRoomName] = useState<string>('');
+  const [localIs5ColumnModeActive, setLocalIs5ColumnModeActive] = useState<boolean>(false);
+  const [localIsSecureThroneRequired, setLocalIsSecureThroneRequired] = useState<boolean>(true);
 
   const handleCreate = () => {
     if (playerName.trim() && gameRoomName.trim()) {
-      // Room name is already uppercase and alphanumeric due to input handling
-      onCreateGame(playerName.trim(), gameRoomName.trim());
+      onCreateGame(playerName.trim(), gameRoomName.trim(), localIs5ColumnModeActive, localIsSecureThroneRequired);
     }
   };
 
   const handleJoin = () => {
     if (playerName.trim() && gameRoomName.trim()) {
-      // Room name is already uppercase and alphanumeric due to input handling
       onJoinGame(playerName.trim(), gameRoomName.trim());
     }
   };
 
   const handleGameRoomNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Convert to uppercase and remove non-alphanumerical characters
     const processedValue = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
     setGameRoomName(processedValue);
   };
@@ -54,7 +53,7 @@ const MultiplayerSetup: React.FC<MultiplayerSetupProps> = ({
         </div>
       )}
 
-      <div className="w-full max-w-md p-6 bg-[#3A3633] rounded-lg shadow-xl space-y-6">
+      <div className="w-full max-w-md p-6 bg-[#3A3633] rounded-lg shadow-xl space-y-5">
         <div>
           <label htmlFor="playerName" className="block text-s font-medium text-[#C0B6A8] mb-1 font-medieval input-title">
             your name
@@ -87,10 +86,43 @@ const MultiplayerSetup: React.FC<MultiplayerSetupProps> = ({
             disabled={loading}
             aria-required="true"
           />
-           <p className="text-xs text-[#a09488] mt-2">Min 3 alphanumerical characters (A-Z, 0-9).</p>
+           <p className="text-xs text-[#a09488] mt-1.5">Min 3 alphanumerical characters (A-Z, 0-9).</p>
+        </div>
+
+        {/* Game Settings Toggles - Only relevant for Create Game flow */}
+        <div className="pt-2 space-y-1 border-t border-[#4A4238]">
+            <p className="text-sm font-medium text-[#C0B6A8] mb-2 font-medieval input-title text-center">Game Settings (for Host)</p>
+            <button
+                onClick={() => setLocalIsSecureThroneRequired(prev => !prev)}
+                className={`flex justify-between items-center px-3 py-2 text-[#E0D8CC] font-semibold transition-colors duration-150 font-medieval w-full text-sm focus:outline-none shadow-none rounded-md hover:bg-[#4A4238] ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                aria-pressed={localIsSecureThroneRequired}
+                title={localIsSecureThroneRequired ? "Throne safety: REQUIRED (Must be clear to win)" : "Throne safety: NOT REQUIRED (Can win on threatened Throne)"}
+                disabled={loading}
+              >
+                <span>Secure Throne for Victory</span>
+                <div className={`relative inline-block w-9 h-[20px] rounded-full transition-colors duration-200 ease-in-out ${localIsSecureThroneRequired ? 'bg-[#8C7062]' : 'bg-[#4A4238]'}`}>
+                  <span
+                    className={`absolute top-[1px] left-[1px] inline-block w-[18px] h-[18px] bg-white rounded-full transform transition-transform duration-200 ease-in-out ${localIsSecureThroneRequired ? 'translate-x-[18px]' : 'translate-x-0'}`}
+                  />
+                </div>
+            </button>
+            <button
+                onClick={() => setLocalIs5ColumnModeActive(prev => !prev)}
+                className={`flex justify-between items-center px-3 py-2 text-[#E0D8CC] font-semibold transition-colors duration-150 font-medieval w-full text-sm focus:outline-none shadow-none rounded-md hover:bg-[#4A4238] ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                aria-pressed={localIs5ColumnModeActive}
+                title={localIs5ColumnModeActive ? "Switch to 7-column mode" : "Switch to 5-column mode"}
+                disabled={loading}
+              >
+                <span>5-Column Mode</span>
+                <div className={`relative inline-block w-9 h-[20px] rounded-full transition-colors duration-200 ease-in-out ${localIs5ColumnModeActive ? 'bg-[#8C7062]' : 'bg-[#4A4238]'}`}>
+                  <span
+                    className={`absolute top-[1px] left-[1px] inline-block w-[18px] h-[18px] bg-white rounded-full transform transition-transform duration-200 ease-in-out ${localIs5ColumnModeActive ? 'translate-x-[18px]' : 'translate-x-0'}`}
+                  />
+                </div>
+            </button>
         </div>
         
-        <div className="flex flex-col sm:flex-row sm:space-x-4 space-y-3 sm:space-y-0">
+        <div className="flex flex-col sm:flex-row sm:space-x-4 space-y-3 sm:space-y-0 pt-3">
           <button
             onClick={handleCreate}
             disabled={!playerName.trim() || gameRoomName.trim().length < 3 || loading}

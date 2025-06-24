@@ -62,8 +62,8 @@ const gameConverter: FirestoreDataConverter<FirestoreGameDoc> = {
         playerNorthName: gameStateFromDb.playerNorthName || "North",
         lastMoveTimestamp: gameStateFromDb.lastMoveTimestamp instanceof Timestamp ? gameStateFromDb.lastMoveTimestamp : null,
         awaitingPromotionChoice: gameStateFromDb.awaitingPromotionChoice || null,
-        capturedBySouth: gameStateFromDb.capturedBySouth || [],
-        capturedByNorth: gameStateFromDb.capturedByNorth || [],
+        southsLostPieces: gameStateFromDb.southsLostPieces || [], // Updated field
+        northsLostPieces: gameStateFromDb.northsLostPieces || [], // Updated field
         awaitingReinforcementPlacement: gameStateFromDb.awaitingReinforcementPlacement || null,
         boardRows: gameStateFromDb.boardRows || BOARD_ROWS_DEFAULT,
         boardCols: gameStateFromDb.boardCols || BOARD_COLS_7_COLUMN,
@@ -90,7 +90,7 @@ export const createGameInFirestore = async (
   hostPlayerId: string,
   hostPlayerName: string,
   is5ColumnMode: boolean,
-  isSecureThroneRequired: boolean // Renamed parameter
+  isSecureThroneRequired: boolean 
 ): Promise<FirestoreGameDoc> => {
   const boardRows = BOARD_ROWS_DEFAULT;
   const boardCols = is5ColumnMode ? BOARD_COLS_5_COLUMN : BOARD_COLS_7_COLUMN;
@@ -114,13 +114,13 @@ export const createGameInFirestore = async (
     playerNorthName: null, 
     lastMoveTimestamp: null,
     awaitingPromotionChoice: null,
-    capturedBySouth: [],
-    capturedByNorth: [],
+    southsLostPieces: [], // Initialize new field
+    northsLostPieces: [], // Initialize new field
     awaitingReinforcementPlacement: null,
     boardRows: boardRows,
     boardCols: boardCols,
     centralThroneCoord: centralThrone,
-    isSecureThroneRequired: isSecureThroneRequired, // Store the setting
+    isSecureThroneRequired: isSecureThroneRequired, 
   };
 
   const gameDocRef = doc(db, "games", gameId).withConverter(gameConverter);
