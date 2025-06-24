@@ -23,7 +23,7 @@ const PieceView: React.FC<PieceViewProps> = ({
   isDraggable,
   onDragStart,
   onDragEnd,
-  pieceId // unused for now but good for context
+  pieceId
 }) => {
   const baseSizeClass = isJarl ? 'w-11 h-11 md:w-14 md:h-14' : 'w-9 h-9 md:w-11 md:h-11';
   const symbolSizeClass = isJarl ? 'text-[1.8rem] md:text-[2.2rem]' : 'text-[1.65rem] md:text-[1.8rem]';
@@ -36,7 +36,6 @@ const PieceView: React.FC<PieceViewProps> = ({
     ${baseSizeClass}
     ${isDraggable ? 'cursor-grab' : ''}
   `;
-  // Add active:cursor-grabbing if needed, Tailwind might handle this with `cursor-grab`
 
   const symbolSpecificClasses = `
     ${colors.text}
@@ -49,30 +48,19 @@ const PieceView: React.FC<PieceViewProps> = ({
       e.preventDefault();
       return;
     }
-    // Set a slight delay to allow the drag image to be captured if issues persist
-    // setTimeout(() => onDragStart(e), 0); 
     onDragStart(e);
   };
 
-
-  if (type === PieceType.RAVEN) {
-    return (
-      <div
-        className={`${outerPieceBaseClasses} ${symbolSpecificClasses}`}
-        title={`${player} ${type}`}
-        draggable={isDraggable}
-        onDragStart={handleDragStartInternal}
-        onDragEnd={onDragEnd}
-        id={`piece-${pieceId}`} // Useful for e.g. end-to-end testing or specific styling
-      >
-        {symbol}
-      </div>
-    );
-  }
+  let shapeClass = ''; // Default to square (due to equal w/h in baseSizeClass)
+  if (type === PieceType.JARL || type === PieceType.HIRDMAN) {
+    shapeClass = 'rounded-full';
+  } 
+  // Both PieceType.RAVEN and PieceType.ROOK_RAVEN will now use the default square shape.
+  // The hexagonal clip-path for PieceType.RAVEN has been removed.
 
   return (
     <div
-      className={`${outerPieceBaseClasses} rounded-full ${symbolSpecificClasses}`}
+      className={`${outerPieceBaseClasses} ${shapeClass} ${symbolSpecificClasses}`}
       title={`${player} ${type}`}
       draggable={isDraggable}
       onDragStart={handleDragStartInternal}

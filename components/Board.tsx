@@ -11,18 +11,17 @@ interface BoardProps {
   validMoves: Move[];
   playerColors: typeof PIECE_COLORS;
   pieceSymbols: typeof PIECE_SYMBOLS;
-  northThroneCoord: Coordinate;
-  southThroneCoord: Coordinate;
-  portalACoord: Coordinate;
-  portalBCoord: Coordinate;
+  centralThroneCoord: Coordinate; 
   isCheckerboardPattern: boolean;
-  isPortalModeActive: boolean;
   isInteractionDisabled?: boolean;
-  currentPlayer: Player; // For determining draggable pieces
-  gamePhase: GamePhase; // For determining draggable pieces
+  currentPlayer: Player; 
+  gamePhase: GamePhase; 
   onPieceDragStart: (piece: PieceOnBoard, event: React.DragEvent) => void;
   onPieceDragEnd: (event: React.DragEvent) => void;
   onPieceDropOnSquare: (row: number, col: number, event: React.DragEvent) => void;
+  boardRows: number; 
+  boardCols: number; 
+  isReinforcementMode: boolean; // New prop
 }
 
 const Board: React.FC<BoardProps> = ({
@@ -32,38 +31,41 @@ const Board: React.FC<BoardProps> = ({
   validMoves,
   playerColors,
   pieceSymbols,
-  northThroneCoord,
-  southThroneCoord,
-  portalACoord,
-  portalBCoord,
+  centralThroneCoord, 
   isCheckerboardPattern,
-  isPortalModeActive,
   isInteractionDisabled = false,
   currentPlayer,
   gamePhase,
   onPieceDragStart,
   onPieceDragEnd,
   onPieceDropOnSquare,
+  boardRows, 
+  boardCols, 
+  isReinforcementMode,
 }) => {
   const isHighlighted = (row: number, col: number): boolean => {
-    if (isInteractionDisabled && selectedPiece?.player !== currentPlayer) return false; // Don't show opponent's highlights
+    if (isReinforcementMode) { // During reinforcement, highlight all empty squares
+        return !board[row].squares[col];
+    }
+    if (isInteractionDisabled && selectedPiece?.player !== currentPlayer) return false;
     return validMoves.some(move => move.to.row === row && move.to.col === col);
   };
 
   const isSelected = (row: number, col: number): boolean => {
+    if (isReinforcementMode) return false; // No piece selection during reinforcement placement
     if (isInteractionDisabled && selectedPiece?.player !== currentPlayer) return false;
     return !!selectedPiece && selectedPiece.row === row && selectedPiece.col === col;
   };
 
   const isPieceDraggable = (piece: PieceOnBoard | null): boolean => {
-    if (!piece || isInteractionDisabled || gamePhase === GamePhase.GAME_OVER) {
+    if (!piece || isInteractionDisabled || gamePhase === GamePhase.GAME_OVER || isReinforcementMode) {
       return false;
     }
     return piece.player === currentPlayer;
   };
   
-  // Determine if a square is a potential drop target for the currently selected/dragged piece
   const isPotentialDropTarget = (row: number, col: number): boolean => {
+    if (isReinforcementMode) return false; // Drag-drop not used for reinforcement
     if (!selectedPiece || isInteractionDisabled) return false;
     return validMoves.some(move => 
       move.from.row === selectedPiece.row &&
@@ -73,38 +75,38 @@ const Board: React.FC<BoardProps> = ({
     );
   };
 
+  const gridColsClass = `grid-cols-${boardCols}`; 
+
   return (
-    <div className={`grid grid-cols-7 gap-0.5 bg-black border-4 border-black shadow-xl p-2 rounded ${isInteractionDisabled && selectedPiece?.player !== currentPlayer ? 'cursor-not-allowed opacity-75' : ''}`}>
+    <div className={`grid ${gridColsClass} gap-0.5 bg-black border-4 border-black shadow-xl p-2 rounded ${isInteractionDisabled && selectedPiece?.player !== currentPlayer && !isReinforcementMode ? 'cursor-not-allowed opacity-75' : ''}`}>
       {board.map((rowData, rowIndex) =>
         rowData.squares.map((piece, colIndex) => (
           <SquareCell
             key={`${rowIndex}-${colIndex}`}
             piece={piece}
             onClick={() => {
-              if (!isInteractionDisabled) {
+              if (!isInteractionDisabled || isReinforcementMode) { // Allow click for reinforcement
                 onSquareClick(rowIndex, colIndex);
               }
             }}
             isHighlighted={isHighlighted(rowIndex, colIndex)}
             isSelected={isSelected(rowIndex, colIndex)}
-            isNorthThrone={northThroneCoord.row === rowIndex && northThroneCoord.col === colIndex}
-            isSouthThrone={southThroneCoord.row === rowIndex && southThroneCoord.col === colIndex}
-            isPortalA={isPortalModeActive && portalACoord.row === rowIndex && portalACoord.col === colIndex}
-            isPortalB={isPortalModeActive && portalBCoord.row === rowIndex && portalBCoord.col === colIndex}
+            isCentralThrone={centralThroneCoord.row === rowIndex && centralThroneCoord.col === colIndex} 
             playerColors={playerColors}
             pieceSymbols={pieceSymbols}
             row={rowIndex}
             col={colIndex}
             isCheckerboardPattern={isCheckerboardPattern}
-            isPortalModeActive={isPortalModeActive}
-            isDisabled={isInteractionDisabled && (!selectedPiece || piece?.player !== currentPlayer)} // More refined disabled logic
-            // Drag and drop related props
+            isDisabled={isInteractionDisabled && (!selectedPiece || piece?.player !== currentPlayer) && !isReinforcementMode}
             isPieceDraggable={isPieceDraggable(piece)}
             onPieceDragStart={onPieceDragStart}
             onPieceDragEnd={onPieceDragEnd}
             onPieceDropOnSquare={onPieceDropOnSquare}
             isPotentialDropTarget={isPotentialDropTarget(rowIndex, colIndex)}
             selectedPiece={selectedPiece}
+            boardRows={boardRows}
+            boardCols={boardCols} // Pass boardCols
+            isReinforcementMode={isReinforcementMode} // Pass to SquareCell
           />
         ))
       )}

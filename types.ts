@@ -9,7 +9,8 @@ export enum Player {
 export enum PieceType {
   JARL = 'Jarl',
   HIRDMAN = 'Hirdman',
-  RAVEN = 'Raven'
+  RAVEN = 'Raven',
+  ROOK_RAVEN = 'Rook Raven' // New piece type
 }
 
 export interface Piece {
@@ -35,7 +36,7 @@ export type BoardState = RowData[];
 
 export interface Coordinate {
   row: number;
-  col: number;
+  col:number;
 }
 
 export interface Move {
@@ -64,6 +65,15 @@ export interface GameState {
   playerSouthName: string | null; 
   playerNorthName: string | null; 
   lastMoveTimestamp: Timestamp | null; // Changed from number | null
+  awaitingPromotionChoice: { pieceId: string; at: Coordinate } | null; // For Raven promotion
+  capturedBySouth: Piece[]; // Pieces captured by South player
+  capturedByNorth: Piece[]; // Pieces captured by North player
+  awaitingReinforcementPlacement: { pieceToPlace: Piece; originalPlayer: Player } | null; // For placing a captured piece
+  // Dynamic board properties, initialized based on mode
+  boardRows: number;
+  boardCols: number;
+  centralThroneCoord: Coordinate;
+  isSecureThroneRequired: boolean; // Renamed from isJarlSelfPreservationActive
 }
 
 // Defines the overall state of the application UI
@@ -77,7 +87,7 @@ export type AppMode =
 // Structure for the game document in Firestore
 export interface FirestoreGameDoc {
   gameId: string;
-  gameState: GameState;
+  gameState: GameState; // This now includes isSecureThroneRequired
   hostPlayerId: string; 
   guestPlayerId: string | null; 
   hostPlayerName: string;

@@ -1,5 +1,5 @@
 {
-  "name": "Leggrað VS",
+  "name": "Leggrað VS (staging)",
   "description": "A two-player medieval strategy board game. Victory is achieved by moving your Lord to the opponent's starting Throne square, or by capturing the enemy Lord. All pieces capture by direct displacement.",
   "requestFramePermissions": [],
   "prompt": ""

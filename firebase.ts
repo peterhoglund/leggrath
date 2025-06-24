@@ -16,7 +16,15 @@ import type { Unsubscribe } from "firebase/firestore";
 
 import { GameState, Player, FirestoreGameDoc, GamePhase } from './types'; 
 import { getInitialBoard } from './utils/gameLogic';
-import { INITIAL_PIECES_SETUP } from './constants';
+import { 
+    INITIAL_PIECES_SETUP_7_COLUMN, 
+    INITIAL_PIECES_SETUP_5_COLUMN,
+    BOARD_ROWS_DEFAULT,
+    BOARD_COLS_7_COLUMN,
+    BOARD_COLS_5_COLUMN,
+    CENTRAL_THRONE_COORD_7_COLUMN,
+    CENTRAL_THRONE_COORD_5_COLUMN
+} from './constants';
 
 // Initialize Firebase using modern v9+ modular SDK
 const app = initializeApp(window.firebaseConfig); 
@@ -25,48 +33,72 @@ const db = getFirestore(app);
 // FirestoreDataConverter for FirestoreGameDoc
 const gameConverter: FirestoreDataConverter<FirestoreGameDoc> = {
   toFirestore: (gameData: FirestoreGameDoc) => {
-    // The gameData object should already be in the correct format,
-    // especially with Timestamps, as per application logic.
-    // This function ensures it matches what Firestore expects.
     return {
       gameId: gameData.gameId,
-      gameState: gameData.gameState,
+      gameState: gameData.gameState, 
       hostPlayerId: gameData.hostPlayerId,
       hostPlayerName: gameData.hostPlayerName,
       guestPlayerId: gameData.guestPlayerId,
       guestPlayerName: gameData.guestPlayerName,
       status: gameData.status,
-      createdAt: gameData.createdAt, // Remains a number as per current design
-      updatedAt: gameData.updatedAt, // Should be a Firestore Timestamp
+      createdAt: gameData.createdAt,
+      updatedAt: gameData.updatedAt,
     };
   },
   fromFirestore: (snapshot: QueryDocumentSnapshot, options: SnapshotOptions): FirestoreGameDoc => {
     const data = snapshot.data(options);
-    // Firestore SDK automatically converts its timestamp representation
-    // to Firestore Timestamp objects on the client.
-    // We just need to cast it to our type.
-    // Ensure all fields are correctly typed.
+    const gameStateFromDb = data.gameState as Partial<GameState>; 
+    const fullGameState: GameState = {
+        board: gameStateFromDb.board || getInitialBoard(INITIAL_PIECES_SETUP_7_COLUMN, BOARD_ROWS_DEFAULT, BOARD_COLS_7_COLUMN),
+        currentPlayer: gameStateFromDb.currentPlayer || Player.SOUTH,
+        selectedPiece: gameStateFromDb.selectedPiece || null,
+        validMoves: gameStateFromDb.validMoves || [],
+        gamePhase: gameStateFromDb.gamePhase || GamePhase.PLAYING,
+        winner: gameStateFromDb.winner || null,
+        winReason: gameStateFromDb.winReason || null,
+        turnNumber: gameStateFromDb.turnNumber || 1,
+        message: gameStateFromDb.message || "Game loaded.",
+        playerSouthName: gameStateFromDb.playerSouthName || "South",
+        playerNorthName: gameStateFromDb.playerNorthName || "North",
+        lastMoveTimestamp: gameStateFromDb.lastMoveTimestamp instanceof Timestamp ? gameStateFromDb.lastMoveTimestamp : null,
+        awaitingPromotionChoice: gameStateFromDb.awaitingPromotionChoice || null,
+        capturedBySouth: gameStateFromDb.capturedBySouth || [],
+        capturedByNorth: gameStateFromDb.capturedByNorth || [],
+        awaitingReinforcementPlacement: gameStateFromDb.awaitingReinforcementPlacement || null,
+        boardRows: gameStateFromDb.boardRows || BOARD_ROWS_DEFAULT,
+        boardCols: gameStateFromDb.boardCols || BOARD_COLS_7_COLUMN,
+        centralThroneCoord: gameStateFromDb.centralThroneCoord || CENTRAL_THRONE_COORD_7_COLUMN,
+        isSecureThroneRequired: typeof gameStateFromDb.isSecureThroneRequired === 'boolean' ? gameStateFromDb.isSecureThroneRequired : true, // Default true if missing
+    };
+
     return {
       gameId: data.gameId,
-      gameState: data.gameState as GameState, // gameState.lastMoveTimestamp is handled within GameState type
+      gameState: fullGameState,
       hostPlayerId: data.hostPlayerId,
       hostPlayerName: data.hostPlayerName,
       guestPlayerId: data.guestPlayerId,
       guestPlayerName: data.guestPlayerName,
       status: data.status,
       createdAt: data.createdAt,
-      updatedAt: data.updatedAt as Timestamp, // Explicitly cast if necessary, but SDK should handle
-    } as FirestoreGameDoc; // Casting the whole object for type safety.
+      updatedAt: data.updatedAt as Timestamp,
+    } as FirestoreGameDoc;
   }
 };
 
 export const createGameInFirestore = async (
   gameId: string,
   hostPlayerId: string,
-  hostPlayerName: string
+  hostPlayerName: string,
+  is5ColumnMode: boolean,
+  isSecureThroneRequired: boolean // Renamed parameter
 ): Promise<FirestoreGameDoc> => {
-  const initialBoard = getInitialBoard(INITIAL_PIECES_SETUP);
-  const initialPlayer = Player.SOUTH; // Host is South by default
+  const boardRows = BOARD_ROWS_DEFAULT;
+  const boardCols = is5ColumnMode ? BOARD_COLS_5_COLUMN : BOARD_COLS_7_COLUMN;
+  const centralThrone = is5ColumnMode ? CENTRAL_THRONE_COORD_5_COLUMN : CENTRAL_THRONE_COORD_7_COLUMN;
+  const initialSetup = is5ColumnMode ? INITIAL_PIECES_SETUP_5_COLUMN : INITIAL_PIECES_SETUP_7_COLUMN;
+
+  const initialBoard = getInitialBoard(initialSetup, boardRows, boardCols);
+  const initialPlayer = Player.SOUTH; 
 
   const initialGameState: GameState = {
     board: initialBoard,
@@ -80,7 +112,15 @@ export const createGameInFirestore = async (
     message: `Turn 1: ${hostPlayerName} (${initialPlayer})'s move. Waiting for opponent...`,
     playerSouthName: hostPlayerName,
     playerNorthName: null, 
-    lastMoveTimestamp: null, 
+    lastMoveTimestamp: null,
+    awaitingPromotionChoice: null,
+    capturedBySouth: [],
+    capturedByNorth: [],
+    awaitingReinforcementPlacement: null,
+    boardRows: boardRows,
+    boardCols: boardCols,
+    centralThroneCoord: centralThrone,
+    isSecureThroneRequired: isSecureThroneRequired, // Store the setting
   };
 
   const gameDocRef = doc(db, "games", gameId).withConverter(gameConverter);
@@ -109,7 +149,7 @@ export const joinGameInFirestore = async (
   const gameSnap = await getDoc(gameDocRef);
 
   if (gameSnap.exists()) {
-    const gameData = gameSnap.data(); // gameSnap.data() will return FirestoreGameDoc due to converter
+    const gameData = gameSnap.data();
     if (gameData.status === 'waiting' && !gameData.guestPlayerId) {
       const updatedGameState: GameState = { 
         ...gameData.gameState,
@@ -117,7 +157,7 @@ export const joinGameInFirestore = async (
         message: `Turn ${gameData.gameState.turnNumber}: ${gameData.gameState.playerSouthName || Player.SOUTH} (${Player.SOUTH})'s move. Select a piece.`,
       };
       
-      const updatePayload: Partial<FirestoreGameDoc> = { // Use Partial for updates
+      const updatePayload: Partial<FirestoreGameDoc> = { 
         guestPlayerId: guestPlayerId,
         guestPlayerName: guestPlayerName,
         status: 'active' as const,
@@ -126,7 +166,6 @@ export const joinGameInFirestore = async (
       };
       await updateDoc(gameDocRef, updatePayload);
       
-      // Re-fetch or merge to get the full updated document, as updateDoc doesn't return the doc
       const updatedSnap = await getDoc(gameDocRef);
       return updatedSnap.exists() ? updatedSnap.data() : null;
 
@@ -142,9 +181,9 @@ export const joinGameInFirestore = async (
 
 export const getGameStream = (gameId: string, callback: (gameData: FirestoreGameDoc | null) => void): Unsubscribe => {
   const gameDocRef = doc(db, "games", gameId).withConverter(gameConverter);
-  return onSnapshot(gameDocRef, (docSnap) => { // docSnap type will be QueryDocumentSnapshot<FirestoreGameDoc>
+  return onSnapshot(gameDocRef, (docSnap) => { 
     if (docSnap.exists()) {
-      callback(docSnap.data()); // .data() will return FirestoreGameDoc
+      callback(docSnap.data()); 
     } else {
       callback(null);
     }
@@ -156,7 +195,7 @@ export const getGameStream = (gameId: string, callback: (gameData: FirestoreGame
 
 export const updateGameStateInFirestore = async (gameId: string, newGameState: GameState): Promise<void> => {
   const gameDocRef = doc(db, "games", gameId).withConverter(gameConverter);
-  const updatePayload: Partial<FirestoreGameDoc> = { // Use Partial for updates
+  const updatePayload: Partial<FirestoreGameDoc> = { 
     gameState: newGameState, 
     updatedAt: Timestamp.now(), 
   };
@@ -169,7 +208,7 @@ export const generateUniqueId = (): string => {
 
 export const setGameStatus = async (gameId: string, status: FirestoreGameDoc['status']): Promise<void> => {
   const gameDocRef = doc(db, "games", gameId).withConverter(gameConverter);
-  const updatePayload: Partial<FirestoreGameDoc> = { // Use Partial for updates
+  const updatePayload: Partial<FirestoreGameDoc> = { 
      status, 
      updatedAt: Timestamp.now() 
   };
